@@ -16,6 +16,7 @@
 #include "beats.h"
 #include "gh_protocolo.h"
 #include "enlace_spi.h"
+#include "juez.h"
 #include "music.h"
 #include "synth.h"
 
@@ -183,12 +184,13 @@ static void Jugador_Preparar(Jugador *J, const Song *s, const uint8_t *pistas, u
 	J->hay_gema = Siguiente_Gema(J, &J->gema);
 }
 
-static void Reiniciar(void) {
+static void Reiniciar(uint8_t nueva) {
 	const Song *s = entrada->song;
 	Jugador_Preparar(&jug[0], s, entrada->p1_tracks, entrada->p1_n);
 	Jugador_Preparar(&jug[1], s, entrada->p2_tracks, entrada->p2_n);
 	tick_previo = 0;
-	Enlace_Enviar(GH_PKT_CANCION, cancion, (uint8_t)bpm, (uint8_t)(bpm >> 8), 0, 0);
+	Juez_Iniciar(entrada, nueva);                         /* borra las notas que el juez llevaba */
+	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_CANCION, cancion, (uint8_t)bpm, (uint8_t)(bpm >> 8), 0, 0);
 }
 
 void Beats_Iniciar(const SongEntry *e, uint8_t indice) {
@@ -200,20 +202,21 @@ void Beats_Iniciar(const SongEntry *e, uint8_t indice) {
 	sep_ticks       = Ms_A_Ticks(BEATS_SEPARACION_MS);
 	larga_min_ticks = Ms_A_Ticks(BEATS_LARGA_MIN_MS);
 	anticipa_ticks  = Ms_A_Ticks(GH_ANTICIPACION_MS);
-	Reiniciar();
+	Reiniciar(1);
 	activo = 1;
 }
 
 void Beats_Detener(void) {
 	activo = 0;
-	Enlace_Enviar(GH_PKT_ALTO, 0, 0, 0, 0, 0);
+	Juez_Iniciar(0, 1);
+	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_ALTO, 0, 0, 0, 0, 0);
 }
 
 void Beats_Actualizar(void) {
 	if (!activo || !Music_IsPlaying()) return;
 
 	uint32_t ahora = Music_GetTick();
-	if (ahora < tick_previo) Reiniciar();                 /* la canción dio la vuelta (repetir) */
+	if (ahora < tick_previo) Reiniciar(0);                 /* la canción dio la vuelta (repetir) */
 	tick_previo = ahora;
 
 	for (uint8_t j = 0; j < 2; j++) {
@@ -224,9 +227,9 @@ void Beats_Actualizar(void) {
 				uint32_t largo  = Ticks_A_Ms(J->gema.largo);
 				if (faltan > 0xFFFF) faltan = 0xFFFF;
 				if (largo  > 0xFFFF) largo  = 0xFFFF;
-				Enlace_Enviar(GH_PKT_NOTA, (uint8_t)(((j + 1) << 4) | J->gema.carriles),
-				              (uint8_t)faltan, (uint8_t)(faltan >> 8),
-				              (uint8_t)largo,  (uint8_t)(largo >> 8));
+				uint8_t c = 0;                                /* una nota por botón: el carril más bajo */
+				while (c < 3 && !(J->gema.carriles & (1u << c))) c++;
+				Juez_NotaNueva(j, c, (uint16_t)faltan, (uint16_t)largo);   /* el juez la registra y la manda */
 				beats_enviadas[j]++;
 			} else {
 				beats_tarde++;                                /* ya pasó: no tiene sentido mandarla */

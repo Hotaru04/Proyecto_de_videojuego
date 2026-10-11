@@ -21,11 +21,14 @@ struct Boton {
     const char *nombre;
 };
 
+/* Cada color tiene DOS botones del control: cualquiera de los dos vale.
+ * La máscara junta los dos; solo se manda "presionado" cuando se aprieta el primero de los dos
+ * y "_off" cuando se suelta el último (así el STM nunca ve un _off mientras el otro sigue apretado). */
 static const Boton botones[] = {
-    { GRUPO_BOTONES, 0x0001, "A"     },
-    { GRUPO_BOTONES, 0x0002, "B"     },
-    { GRUPO_BOTONES, 0x0004, "X"     },
-    { GRUPO_BOTONES, 0x0008, "Y"     },
+    { GRUPO_BOTONES, 0x0001 | 0x0040, "A"     },   /* verde:    A  o 0x0040 */
+    { GRUPO_BOTONES, 0x0002 | 0x0010, "B"     },   /* rojo:     B  o 0x0010 */
+    { GRUPO_BOTONES, 0x0004 | 0x0020, "X"     },   /* amarillo: X  o 0x0020 */
+    { GRUPO_BOTONES, 0x0008 | 0x0080, "Y"     },   /* azul:     Y  o 0x0080 */
     { GRUPO_DPAD,    0x01,   "Up"    },
     { GRUPO_DPAD,    0x02,   "Down"  },
     { GRUPO_DPAD,    0x04,   "Right" },
@@ -63,7 +66,7 @@ static void enviar(int jugador, const char *nombre, bool presionado) {
    (si no, el STM se quedaría creyendo que siguen presionados) */
 static void soltarTodo(int j) {
     for (const Boton &b : botones)
-        if (leerGrupo(previo[j], b.grupo) & b.mascara)
+        if ((leerGrupo(previo[j], b.grupo) & b.mascara) != 0)
             enviar(j, b.nombre, false);
     previo[j] = { 0, 0, 0 };
 }
@@ -102,8 +105,8 @@ static void revisarJugador(int j) {
     Estado ahora = { ctl->buttons(), ctl->dpad(), ctl->miscButtons() };
 
     for (const Boton &b : botones) {
-        bool estaba = leerGrupo(previo[j], b.grupo) & b.mascara;
-        bool esta   = leerGrupo(ahora,     b.grupo) & b.mascara;
+        bool estaba = (leerGrupo(previo[j], b.grupo) & b.mascara) != 0;   /* cualquiera de sus botones */
+        bool esta   = (leerGrupo(ahora,     b.grupo) & b.mascara) != 0;
         if (esta != estaba)             /* cambió: se presionó o se soltó */
             enviar(j, b.nombre, esta);
     }

@@ -18,6 +18,7 @@ void     Audio_Start(void);                               /* arranca TIM6 + DAC 
 void     Audio_Stop(void);
 void     Audio_PlaySong(const Song *song, uint8_t loop);  /* seguro desde main (pausa la IRQ del DMA) */
 void     Audio_SetMasterVolume(uint16_t vol);             /* 0..512, 256 = 1.0 */
+void     Audio_Pausa(uint8_t si);                         /* 1 = silencio y la canción se congela; 0 = sigue igual */
 
 /* Llena 'n' muestras de 12 bits (0..4095) en buf: secuenciador + voces + mezcla + recorte + offset */
 void     Audio_FillBuffer(uint16_t *buf, uint32_t n);
