@@ -50,11 +50,13 @@ typedef struct {
 
 GPIO_Lookup busLookup[256];
 
-// ——— Máscaras del bus de datos ———
-static const uint32_t DATA_PA = LCD_D0_Pin | LCD_D2_Pin | LCD_D7_Pin;
-static const uint32_t DATA_PB = LCD_D3_Pin | LCD_D4_Pin | LCD_D5_Pin
-		| LCD_D6_Pin;
-static const uint32_t DATA_PC = LCD_D1_Pin;
+/* [GH] Escritura rápida de un byte al bus usando la tabla busLookup (3 escrituras a BSRR, sin leer ODR).
+ * Antes cada byte se armaba bit por bit con lectura-modificación-escritura de 3 puertos. */
+#define LCD_BUS(b)   do { const GPIO_Lookup *e_ = &busLookup[(uint8_t)(b)]; \
+                          GPIOA->BSRR = e_->bsrrA; GPIOB->BSRR = e_->bsrrB; GPIOC->BSRR = e_->bsrrC; } while (0)
+#define LCD_WRITE(b) do { LCD_WR_L(); LCD_BUS(b); LCD_WR_H(); } while (0)
+
+// [GH] (las máscaras DATA_PA/PB/PC ya no se usan: las funciones Fast usan busLookup)
 
 extern const uint8_t smallFont[1140];
 extern const uint16_t bigFont[1520];
@@ -366,55 +368,18 @@ void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 //***************************************************************************************************************************************
 void FillRectFast(unsigned int x, unsigned int y, unsigned int w,
 		unsigned int h, unsigned int c) {
-	//Se prepara el dato c (color)
-	uint8_t hi = c >> 8;
-	uint8_t lo = c & 0xFF;
+	/* [GH] Versión con busLookup: el color se separa en byte alto y bajo una sola vez */
+	const GPIO_Lookup hi = busLookup[(c >> 8) & 0xFF];
+	const GPIO_Lookup lo = busLookup[c & 0xFF];
 
-	/*
-	 *  Una vez configurada la ili9341 en formato de color de 16 bits (RGB565), espera que cada píxel se le envíe
-	 *  en dos bytes seguidos, primero el “byte alto” (hi) y luego el “byte bajo” (lo), por eso es que el codigo está segmentado así
-	 *  Se separa el color en parte hi y parte lo, para posteriormente enviarlo con simples comparaciones y cambiando el bit correspondiente,
-	 *  ahorrandonos así el uso de HAL.
-	 */
-
-	LCD_CS_L();              	// Se inicia la comunicación con la pantalla.
-	SetWindows(x, y, x + w - 1, y + h - 1); // Envía el comando 0x2A, que es para definir un rango de columnas y luego 0x2B para definir un rango de filas.
-	LCD_RS_H();              					// RS = 1, para ya mandar datos.
-
-	for (unsigned int j = 0; j < h; j++) { // Recorrer cada fila del rectángulo que vamos a llenar.
-		for (unsigned int i = 0; i < w; i++) { // Por cada fila, recorre cada columna.
-			// ——— Byte alto ———
-			LCD_WR_L(); //WR = 0 es para indicar que se le va a mandar un bus de datos
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA) //Pone en 0 los bits  D0, D2 y D7 sin alterar los demás bits del registro
-					| (((hi >> 0) & 1) ? LCD_D0_Pin : 0) //Compara con los bits de la parte hi para poner en 1 o dejar en 0 el registro
-					| (((hi >> 2) & 1) ? LCD_D2_Pin : 0)
-					| (((hi >> 7) & 1) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((hi >> 3) & 1) ? LCD_D3_Pin : 0)
-					| (((hi >> 4) & 1) ? LCD_D4_Pin : 0)
-					| (((hi >> 5) & 1) ? LCD_D5_Pin : 0)
-					| (((hi >> 6) & 1) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((hi >> 1) & 1) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
-
-			// ——— Byte bajo ———
-			LCD_WR_L();
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA)
-					| (((lo >> 0) & 1) ? LCD_D0_Pin : 0)
-					| (((lo >> 2) & 1) ? LCD_D2_Pin : 0)
-					| (((lo >> 7) & 1) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((lo >> 3) & 1) ? LCD_D3_Pin : 0)
-					| (((lo >> 4) & 1) ? LCD_D4_Pin : 0)
-					| (((lo >> 5) & 1) ? LCD_D5_Pin : 0)
-					| (((lo >> 6) & 1) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((lo >> 1) & 1) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
-		}
+	LCD_CS_L();
+	SetWindows(x, y, x + w - 1, y + h - 1);
+	LCD_RS_H();
+	for (uint32_t n = (uint32_t)w * h; n; n--) {
+		LCD_WR_L(); GPIOA->BSRR = hi.bsrrA; GPIOB->BSRR = hi.bsrrB; GPIOC->BSRR = hi.bsrrC; LCD_WR_H();
+		LCD_WR_L(); GPIOA->BSRR = lo.bsrrA; GPIOB->BSRR = lo.bsrrB; GPIOC->BSRR = lo.bsrrC; LCD_WR_H();
 	}
-	LCD_CS_H();  // CS = 1
+	LCD_CS_H();
 }
 //***************************************************************************************************************************************
 // Función para dibujar texto - parámetros ( texto, coordenada x, cordenada y, color, background)
@@ -528,51 +493,14 @@ void LCD_BitmapTransparent(uint16_t x, uint16_t y, uint16_t width,
 //***************************************************************************************************************************************
 void LCD_BitmapFast(unsigned int x, unsigned int y, unsigned int width,
 		unsigned int height, const uint8_t *bitmap) {
-
+	/* [GH] Versión con busLookup. El bitmap viene en RGB565, byte alto primero */
 	LCD_CS_L();
 	SetWindows(x, y, x + width - 1, y + height - 1);
 	LCD_RS_H();
-
-	for (unsigned int row = 0; row < height; row++) {
-
-		uint32_t base = row * width * 2;
-		for (unsigned int col = 0; col < width; col++) {
-			uint8_t hi = bitmap[base + col * 2];
-			uint8_t lo = bitmap[base + col * 2 + 1];
-
-			// ——— Byte alto ———
-			LCD_WR_L();
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA)
-					| ((hi & 0x01) ? LCD_D0_Pin : 0)
-					| (((hi >> 2) & 0x01) ? LCD_D2_Pin : 0)
-					| (((hi >> 7) & 0x01) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((hi >> 3) & 0x01) ? LCD_D3_Pin : 0)
-					| (((hi >> 4) & 0x01) ? LCD_D4_Pin : 0)
-					| (((hi >> 5) & 0x01) ? LCD_D5_Pin : 0)
-					| (((hi >> 6) & 0x01) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((hi >> 1) & 0x01) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
-
-			// ——— Byte bajo ———
-			LCD_WR_L();
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA)
-					| ((lo & 0x01) ? LCD_D0_Pin : 0)
-					| (((lo >> 2) & 0x01) ? LCD_D2_Pin : 0)
-					| (((lo >> 7) & 0x01) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((lo >> 3) & 0x01) ? LCD_D3_Pin : 0)
-					| (((lo >> 4) & 0x01) ? LCD_D4_Pin : 0)
-					| (((lo >> 5) & 0x01) ? LCD_D5_Pin : 0)
-					| (((lo >> 6) & 0x01) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((lo >> 1) & 0x01) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
-		}
+	const uint8_t *p = bitmap;
+	for (uint32_t n = (uint32_t)width * height * 2u; n; n--) {
+		LCD_WRITE(*p++);
 	}
-
-	// 3) Cierro CS
 	LCD_CS_H();
 }
 //***************************************************************************************************************************************
@@ -618,59 +546,24 @@ void LCD_Sprite(int x, int y, int width, int height, const uint16_t *bitmap,
 //***************************************************************************************************************************************
 void LCD_SpriteFast(int x, int y, int width, int height, const uint8_t *bitmap,
 		int columns, int index, bool flipX, bool flipY, int offset) {
-
+	/* [GH] Versión con busLookup; misma lógica de columnas / índice / volteo que antes */
 	LCD_CS_L();
 	SetWindows(x, y, x + width - 1, y + height - 1);
 	LCD_RS_H();
 
-	const int stride = width * columns * 2; // El stride es cuantos bytes hay en total
-	const uint8_t *basePtr = bitmap + (index * width + offset) * 2;	//Calcula el puntero del primer byte del sprite que se quiere dibujar
+	const int stride = width * columns * 2;                         /* bytes de una fila de la hoja */
+	const uint8_t *basePtr = bitmap + (index * width + offset) * 2; /* primer byte del cuadro */
 
 	for (int row = 0; row < height; row++) {
-
-		int ry = flipY ? (height - 1 - row) : row;//Compara si flipy es 1, si es 1, se leen filas de abajo hacía arriba
-
+		int ry = flipY ? (height - 1 - row) : row;
+		const uint8_t *fila = basePtr + ry * stride;
 		for (int col = 0; col < width; col++) {
-
-			int cx = flipX ? (width - 1 - col) : col;//Compara si flipx es 1, si es 1, se leencolumnas de derecha a izquierda
-
-			const uint8_t *p = basePtr + ry * stride + cx * 2;//Obtiene la dirección de color de la fila y columna correspondiente (El puntero)
-			uint8_t hi = *p++; // lee el byte alto
-			uint8_t lo = *p;   // lee el byte bajo
-
-			// ——— envío byte alto ———
-			LCD_WR_L();//Mismo procedimiento que con FillRectFast
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA)
-					| ((hi & 0x01) ? LCD_D0_Pin : 0)
-					| (((hi >> 2) & 0x01) ? LCD_D2_Pin : 0)
-					| (((hi >> 7) & 0x01) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((hi >> 3) & 0x01) ? LCD_D3_Pin : 0)
-					| (((hi >> 4) & 0x01) ? LCD_D4_Pin : 0)
-					| (((hi >> 5) & 0x01) ? LCD_D5_Pin : 0)
-					| (((hi >> 6) & 0x01) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((hi >> 1) & 0x01) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
-
-			// ——— envío byte bajo ———
-			LCD_WR_L();
-			GPIOA->ODR = (GPIOA->ODR & ~DATA_PA)
-					| ((lo & 0x01) ? LCD_D0_Pin : 0)
-					| (((lo >> 2) & 0x01) ? LCD_D2_Pin : 0)
-					| (((lo >> 7) & 0x01) ? LCD_D7_Pin : 0);
-			GPIOB->ODR = (GPIOB->ODR & ~DATA_PB)
-					| (((lo >> 3) & 0x01) ? LCD_D3_Pin : 0)
-					| (((lo >> 4) & 0x01) ? LCD_D4_Pin : 0)
-					| (((lo >> 5) & 0x01) ? LCD_D5_Pin : 0)
-					| (((lo >> 6) & 0x01) ? LCD_D6_Pin : 0);
-			GPIOC->ODR = (GPIOC->ODR & ~DATA_PC)
-					| (((lo >> 1) & 0x01) ? LCD_D1_Pin : 0);
-			LCD_WR_H();
+			int cx = flipX ? (width - 1 - col) : col;
+			const uint8_t *q = fila + cx * 2;
+			LCD_WRITE(q[0]);   /* byte alto */
+			LCD_WRITE(q[1]);   /* byte bajo */
 		}
 	}
-
-	// 4) Desactivo CS
 	LCD_CS_H();
 }
 
@@ -719,4 +612,25 @@ void LCD_Sprite_Transparent(int x, int y, int width, int height,
 			}
 		}
 	}
+}
+
+//***************************************************************************************************************************************
+// [GH] Scroll vertical por hardware (comandos MIPI 0x33 y 0x37)
+//   La pantalla se divide en: zona fija arriba (tfa) + zona que se desplaza (vsa) + zona fija abajo (bfa).
+//   tfa + vsa + bfa = 320. LCD_ScrollStart(vsp) elige qué fila de memoria se ve arriba de la zona que se desplaza.
+//***************************************************************************************************************************************
+void LCD_ScrollArea(uint16_t tfa, uint16_t vsa, uint16_t bfa) {
+	LCD_CS_L();
+	LCD_CMD(0x33);
+	LCD_DATA(tfa >> 8); LCD_DATA(tfa & 0xFF);
+	LCD_DATA(vsa >> 8); LCD_DATA(vsa & 0xFF);
+	LCD_DATA(bfa >> 8); LCD_DATA(bfa & 0xFF);
+	LCD_CS_H();
+}
+
+void LCD_ScrollStart(uint16_t vsp) {
+	LCD_CS_L();
+	LCD_CMD(0x37);
+	LCD_DATA(vsp >> 8); LCD_DATA(vsp & 0xFF);
+	LCD_CS_H();
 }

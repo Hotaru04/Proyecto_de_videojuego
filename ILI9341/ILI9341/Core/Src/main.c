@@ -25,6 +25,8 @@
 #include "Bitmaps.h"
 #include "gh_sprites.h"   // [GH] sprites de botones y notas (en RAM)
 #include "gh_notas.h"     // [GH] dibujo de botones y movimiento de notas
+#include "gh_pista.h"     // [GH] pista con scroll por hardware (notas que llegan por SPI)
+#include "gh_enlace.h"    // [GH] SPI2 esclavo: paquetes de MusicaGame
 
 // Para el uart3
 #include <stdio.h>
@@ -39,24 +41,13 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* [GH] Parámetros de la demo de notas cayendo */
-#define GH_MAX_NOTAS        8
-#define GH_PERIODO_CUADRO   16   /* ms mínimos por cuadro (~60 fps máx.) */
-#define GH_VELOCIDAD        4    /* px que baja cada nota por cuadro */
-#define GH_CUADROS_ENTRE_NOTAS 22 /* cuadros entre notas nuevas (22*4 = 88 px de separación) */
+/* [GH] 1 = probar la pantalla SIN MusicaGame: inventa notas cada GH_PRUEBA_CADA_MS */
+#define GH_PRUEBA_SIN_SPI   0
+#define GH_PRUEBA_CADA_MS   350
 
-
-
-//Comentario de prueba para el GIt
-
-
-
-// Este define lo tengo que cambiar o eliminar ya que la presion sera dictada por el tiempo del boton
-
-//#define GH_TIEMPO_PRESION   120  /* ms que el botón queda encendido al llegar la nota */
-
-
-
+/* [UART] Cola de comandos: si llegan varios mientras se dibuja, no se pisan */
+#define UART_COLA_N         16    /* potencia de 2 */
+#define UART_LINEA_MAX      30
 
 /* USER CODE END PD */
 
@@ -73,9 +64,14 @@ UART_HandleTypeDef huart3;
 /* USER CODE BEGIN PV */
 
 volatile uint8_t rx_byte;
-char rx_buffer[30];
+char rx_buffer[UART_LINEA_MAX];
 volatile uint8_t rx_index = 0;
-volatile uint8_t comando_listo = 0;
+
+/* [UART] Comandos completos esperando a ser procesados (los llena la interrupción) */
+static char     uart_cola[UART_COLA_N][UART_LINEA_MAX];
+static uint32_t uart_cola_t[UART_COLA_N];          /* HAL_GetTick() cuando llegó el '\n' */
+static volatile uint8_t uart_w = 0, uart_r = 0;
+volatile uint32_t uart_perdidos = 0, uart_errores = 0;   /* diagnóstico */
 
 /* Botones virtuales del Jugador 1 controlados desde el ESP32 */
 volatile uint8_t p1_btn_verde = 0;    // Asignado al botón A
@@ -84,14 +80,6 @@ volatile uint8_t p1_btn_amarillo = 0; // Asignado al botón X
 volatile uint8_t p1_btn_azul = 0;     // Asignado al botón Y
 
 extern uint16_t fondo[];
-
-/* [GH] Estado de la demo */
-static GH_Nota notas[GH_MAX_NOTAS];
-
-/* Patrón de la demo: {carril, largo de cola en px (0 = nota normal)} */
-static const struct { uint8_t carril; int16_t largo; } patron[] = {
-	{0, 0}, {1, 0}, {2, 120}, {3, 0}, {1, 0}, {0, 80}, {3, 0}, {2, 0}, {1, 160}, {3, 0}, {0, 0}, {3, 100},
-};
 
 /* USER CODE END PV */
 
@@ -132,119 +120,20 @@ void ProcesarComandoESP32(char* comando) {
     }
 }
 
-/* [GH] Un paso de la demo: genera notas y lee botones VIRTUALES */
-static void GH_DemoPaso(void) {
-	static uint32_t tCuadro = 0;
-	static uint16_t cuadrosDesdeNota = 0;
-	static uint16_t cuadrosEspera = 0;
-	static uint8_t iPatron = 0;
-
-	static uint8_t estadoVisualBoton[GH_NUM_CARRILES] = {GH_BTN_REPOSO, GH_BTN_REPOSO, GH_BTN_REPOSO, GH_BTN_REPOSO};
-	static uint8_t estadoVisualCola[GH_NUM_CARRILES]  = {0, 0, 0, 0};
-
-	uint32_t ahora = HAL_GetTick();
-	if (ahora - tCuadro < GH_PERIODO_CUADRO) return;
-	tCuadro = ahora;
-
-	if (++cuadrosDesdeNota >= cuadrosEspera) {
-		for (int i = 0; i < GH_MAX_NOTAS; i++) {
-			if (!notas[i].activa) {
-				GH_NotaLargaIniciar(&notas[i], patron[iPatron].carril, patron[iPatron].largo);
-				cuadrosEspera = GH_CUADROS_ENTRE_NOTAS + patron[iPatron].largo / GH_VELOCIDAD;
-				iPatron = (iPatron + 1) % (sizeof(patron) / sizeof(patron[0]));
-				cuadrosDesdeNota = 0;
-				break;
-			}
-		}
-	}
-
-	/* LEER BOTONES VIRTUALES DEL ESP32 EN LUGAR DE LOS PINES FÍSICOS */
-	uint8_t btnVirtuales[GH_NUM_CARRILES];
-	btnVirtuales[0] = p1_btn_verde;
-	btnVirtuales[1] = p1_btn_rojo;
-	btnVirtuales[2] = p1_btn_amarillo;
-	btnVirtuales[3] = p1_btn_azul;
-
-	GH_Nota* colaActiva[GH_NUM_CARRILES] = {NULL, NULL, NULL, NULL};
-
-	for (int i = 0; i < GH_MAX_NOTAS; i++) {
-		if (!notas[i].activa) continue;
-
-		uint8_t c = notas[i].carril;
-		GH_NotaMover(&notas[i], GH_VELOCIDAD);
-
-		/* LÓGICA DE ACIERTO */
-		if (notas[i].y >= GH_BOTON_Y - 15 && notas[i].y <= GH_BOTON_Y + 20) {
-			if (btnVirtuales[c]) {
-				if (notas[i].largo == 0) {
-					notas[i].activa = 0;
-					GH_RestaurarFondo(GH_CARRIL_X(c), notas[i].y - GH_SPR_H, GH_SPR_W, GH_SPR_H * 2);
-					continue;
-				} else if (!notas[i].atrapada) {
-					int16_t old_y = notas[i].y;
-					notas[i].atrapada = 1;
-					notas[i].y = GH_BOTON_Y;
-					notas[i].largo += (GH_BOTON_Y - old_y);
-					if (notas[i].largo < 0) notas[i].largo = 0;
-					notas[i].cabezaLlego = 1;
-					GH_RestaurarFondo(GH_CARRIL_X(c), old_y - GH_SPR_H, GH_SPR_W, GH_SPR_H * 2);
-				}
-			}
-		}
-
-		/* Sostenimiento de nota larga */
-		if (notas[i].activa && notas[i].largo > 0 && notas[i].cabezaLlego) {
-			if (notas[i].atrapada) {
-				if (btnVirtuales[c]) {
-					colaActiva[c] = &notas[i];
-				} else {
-					notas[i].atrapada = 0;
-				}
-			} else {
-				if (notas[i].y >= GH_BOTON_Y && notas[i].y <= GH_BOTON_Y + 20) {
-					if (btnVirtuales[c]) {
-						int16_t old_y = notas[i].y;
-						notas[i].atrapada = 1;
-						notas[i].y = GH_BOTON_Y;
-						notas[i].largo += (GH_BOTON_Y - old_y);
-						if (notas[i].largo < 0) notas[i].largo = 0;
-						colaActiva[c] = &notas[i];
-						GH_RestaurarFondo(GH_CARRIL_X(c), old_y - GH_SPR_H, GH_SPR_W, GH_SPR_H * 2);
-					}
-				}
-			}
-		}
-	}
-
-	/* DIBUJAR EN PANTALLA */
-	for (uint8_t c = 0; c < GH_NUM_CARRILES; c++) {
-		uint8_t nuevoEstadoBoton = GH_BTN_REPOSO;
-		uint8_t nuevoEstadoCola = 0;
-
-		if (btnVirtuales[c]) {
-			if (colaActiva[c] != NULL) {
-				nuevoEstadoBoton = GH_BTN_SOSTENIDO;
-				nuevoEstadoCola = 1;
-			} else {
-				nuevoEstadoBoton = GH_BTN_PRESIONADO;
-			}
-		}
-
-		if (nuevoEstadoBoton != estadoVisualBoton[c]) {
-			GH_DibujarBoton(c, nuevoEstadoBoton);
-			estadoVisualBoton[c] = nuevoEstadoBoton;
-		}
-
-		if (colaActiva[c] != NULL) {
-			if (nuevoEstadoCola != estadoVisualCola[c]) {
-				GH_ColaRedibujar(colaActiva[c], nuevoEstadoCola);
-				estadoVisualCola[c] = nuevoEstadoCola;
-			}
-		} else {
-			estadoVisualCola[c] = 0;
-		}
-	}
+/* [UART] Saca un comando de la cola. Devuelve 1 si había. */
+static uint8_t UART_Leer(char *linea, uint32_t *t) {
+	if (uart_r == uart_w) return 0;
+	strcpy(linea, uart_cola[uart_r]);
+	*t = uart_cola_t[uart_r];
+	uart_r = (uint8_t)((uart_r + 1) & (UART_COLA_N - 1));
+	return 1;
 }
+
+/* [GH] Estado de los 4 botones del jugador 1 (lo que deja ProcesarComandoESP32) */
+static void Botones_Leer(uint8_t b[GH_NUM_CARRILES]) {
+	b[0] = p1_btn_verde; b[1] = p1_btn_rojo; b[2] = p1_btn_amarillo; b[3] = p1_btn_azul;
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -253,10 +142,6 @@ static void GH_DemoPaso(void) {
   */
 int main(void)
 {
-	HAL_Init();
-	  SystemClock_Config();
-	  MX_GPIO_Init();
-	  MX_USART3_UART_Init();
 
   /* USER CODE BEGIN 1 */
 
@@ -311,8 +196,9 @@ int main(void)
 	//LCD_BitmapTransparent(100, 100, 49, 36, dkong, 0x4b7e);
 	//LCD_BitmapTransparent(50, 60,32,32,megaman,0x03ba);
 
-	// [GH] Fondo negro (LCD_Clear(0x00) de arriba) + fila de botones en reposo
-	GH_DibujarBotones();
+	// [GH] Pista con scroll por hardware: fondo negro + fila de botones fija abajo
+	GH_Pista_Iniciar();
+	GH_Enlace_Iniciar();      // SPI2 esclavo (PB12 NSS, PB13 SCK, PB15 MOSI)
 	//LCD_Bitmap(132, 100, 32, 32, megaman);
 
 
@@ -343,13 +229,47 @@ int main(void)
   /* USER CODE BEGIN WHILE */
 	while (1) {
 
-		if (comando_listo) {
-		        comando_listo = 0;
-		        ProcesarComandoESP32(rx_buffer);
-		    }
+		/* 1. Comandos del ESP32 (todos los que haya en la cola) */
+		{
+			char linea[UART_LINEA_MAX];
+			uint32_t t;
+			uint8_t antes[GH_NUM_CARRILES], ahora[GH_NUM_CARRILES];
+			while (UART_Leer(linea, &t)) {
+				Botones_Leer(antes);
+				ProcesarComandoESP32(linea);
+				Botones_Leer(ahora);
+				/* flanco: solo cuenta el momento de presionar (dejarlo presionado no atrapa notas) */
+				for (uint8_t c = 0; c < GH_NUM_CARRILES; c++)
+					if (ahora[c] && !antes[c]) GH_Pista_Presionar(c, t);
+			}
+		}
 
+		/* 2. Notas que manda MusicaGame por SPI */
+		{
+			GH_Paquete pk;
+			while (GH_Enlace_Leer(&pk)) GH_Pista_Paquete(pk.b, pk.t_ms);
+		}
 
-		GH_DemoPaso();   // [GH] notas cayendo
+#if GH_PRUEBA_SIN_SPI
+		/* Prueba: notas inventadas, una por carril en orden, cada 4 una larga */
+		{
+			static uint32_t tPrueba = 0;
+			static uint8_t  iPrueba = 0;
+			if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
+				tPrueba = HAL_GetTick();
+				GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, tPrueba + GH_ANTICIPACION_MS,
+				                     (iPrueba % 4 == 3) ? 600 : 0);
+				iPrueba++;
+			}
+		}
+#endif
+
+		/* 3. Mover la pista, aciertos / fallos y botones */
+		{
+			uint8_t b[GH_NUM_CARRILES];
+			Botones_Leer(b);
+			GH_Pista_Actualizar(b);
+		}
 
 
     /* USER CODE END WHILE */
@@ -607,13 +527,30 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
     if (huart->Instance == USART3) {
         if (rx_byte == '\n') {
             rx_buffer[rx_index] = '\0'; // Terminar la cadena
-            comando_listo = 1;          // Avisar al while(1) que el comando llegó completo
+            /* [UART] Copiar el comando a la cola (el while(1) lo procesa) */
+            uint8_t sig = (uint8_t)((uart_w + 1) & (UART_COLA_N - 1));
+            if (sig != uart_r) {
+                memcpy(uart_cola[uart_w], rx_buffer, rx_index + 1);
+                uart_cola_t[uart_w] = HAL_GetTick();
+                uart_w = sig;
+            } else {
+                uart_perdidos++;        // cola llena
+            }
             rx_index = 0;               // Reiniciar el índice
         }
         else if (rx_byte != '\r' && rx_index < sizeof(rx_buffer) - 1) {
             rx_buffer[rx_index++] = rx_byte;
         }
         // Re-armar la interrupción para escuchar el próximo byte
+        HAL_UART_Receive_IT(&huart3, (uint8_t*)&rx_byte, 1);
+    }
+}
+
+/* [UART] Si hay un error (ruido, overrun...) HAL deja de recibir: volver a armar la recepción */
+void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart) {
+    if (huart->Instance == USART3) {
+        uart_errores++;
+        rx_index = 0;
         HAL_UART_Receive_IT(&huart3, (uint8_t*)&rx_byte, 1);
     }
 }

@@ -113,6 +113,7 @@ void GH_NotaLargaIniciar(GH_Nota *n, uint8_t carril, int16_t largo) {
     n->largo = largo;
     n->activa = 1;
     n->cabezaLlego = 0;
+    n->atrapada = 0;     /* [GH] si no, una nota nueva hereda el 'atrapada' de la anterior */
 }
 
 void GH_ColaRedibujar(const GH_Nota *n, uint8_t encendida) {
