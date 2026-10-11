@@ -27,8 +27,12 @@
 /* USER CODE BEGIN Includes */
 #include "audio.h"      /* motor de audio: TIM6 -> DAC1 (PA4) <- DMA1 Stream5 */
 #include "songs.h"      /* tabla de canciones (los .h de canciones se incluyen en songs.c) */
-#include "enlace_spi.h" /* SPI2 hacia el STM de la pantalla */
-#include "beats.h"      /* notas del juego que se mandan a la pantalla */
+#include "enlace_spi.h" /* SPI2 hacia las pantallas (una por jugador) */
+#include "beats.h"      /* notas del juego que se mandan a las pantallas */
+#include "controles.h"  /* botones de la ESP32 por USART1 (PA10) */
+#include "juez.h"       /* acierto / fallo, mute del jugador que falla */
+#include "registro.h"   /* bitacora por el USB del ST-Link (Termite, 115200) */
+#include "juego.h"      /* menús, canción, resultados */
 
 /* USER CODE END Includes */
 
@@ -39,8 +43,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* [Prueba mute] El jugador 1 suena solo mientras B1 está presionado */
-#define BTN_DEBOUNCE_MS 30
 
 /* USER CODE END PD */
 
@@ -52,19 +54,11 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* ===== Canción seleccionada =====
- * Índice en song_table[] (ver songs.c):
- *   0 demo · 1 Seven Nation Army · 2 The Night Begins to Shine · 3 Power Rangers · 4 Beat It · 5 Pokémon
- * Por ahora se cambia aquí. Después la escribirá la comunicación (UART/SPI/I2C): al cambiar su valor,
- * el while(1) detecta el cambio y arranca la nueva canción. */
-volatile uint8_t song_index = 5;
-
-static uint8_t  song_playing = 0x00;
-static const SongEntry *cur = 0;          /* fila de la canción actual */
-
-/* [Prueba mute] estado del jugador 1 */
-static uint8_t  p1_muted = 0;
-static uint8_t  p1_vol_saved[MUSIC_MAX_TRACKS];
+/* ===== Canción inicial =====
+ * Número en la tabla de canciones: ver CANCION_<NOMBRE> en Core/Inc/canciones_tabla.h
+ * (ese archivo lo genera tools/registrar_canciones.py; hoy: 0 animals, 1 power rangers, 2 night begins to shine).
+ * Con JUEGO_INICIAR_EN_MENU = 1 (juego.h) es solo la que aparece marcada en el menú. */
+volatile uint8_t song_index = 0;
 
 /* USER CODE END PV */
 
@@ -76,40 +70,6 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-/* Arranca la canción 'idx' de la tabla (ignora índices fuera de rango) */
-static void Song_Start(uint8_t idx) {
-  if (idx >= SONG_COUNT) return;
-  cur = &song_table[idx];
-  p1_muted = 0;                                           /* volúmenes nuevos: nada muteado */
-  Audio_SetMasterVolume(cur->master ? cur->master : AUDIO_MASTER_VOLUME);
-  Audio_PlaySong(cur->song, 1);                           /* 1 = repetir */
-  Beats_Iniciar(cur, idx);                                /* avisa a la pantalla y empieza a mandar notas */
-  song_playing = idx;
-}
-
-/* [Prueba mute] Silencia / devuelve el volumen de las pistas del jugador 1 */
-static void P1_SetMuted(uint8_t mute) {
-  if (mute == p1_muted || cur == 0 || cur->p1_tracks == 0) return;
-  const uint8_t *vol = Music_TrackVolumes();
-  for (uint32_t i = 0; i < cur->p1_n; i++) {
-    uint8_t t = cur->p1_tracks[i];
-    if (mute) { p1_vol_saved[i] = vol[t]; Music_SetTrackVolume(t, 0); }
-    else      { Music_SetTrackVolume(t, p1_vol_saved[i]); }
-  }
-  p1_muted = mute;
-}
-
-/* [Prueba mute] B1 (botón azul, activo en bajo) con antirrebote; sin HAL_Delay.
- * Devuelve 1 mientras está presionado. */
-static uint8_t B1_Sostenido(void) {
-  static uint8_t estable = 0, ultimo = 0;
-  static uint32_t tCambio = 0;
-  uint8_t ahora = (HAL_GPIO_ReadPin(B1_GPIO_Port, B1_Pin) == GPIO_PIN_RESET);
-  if (ahora != ultimo) { ultimo = ahora; tCambio = HAL_GetTick(); }
-  if (HAL_GetTick() - tCambio >= BTN_DEBOUNCE_MS) estable = ahora;
-  return estable;
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -147,8 +107,21 @@ int main(void)
   /* USER CODE BEGIN 2 */
   Audio_Init();                    /* calcula ARR de TIM6 para 32 kHz y prepara el sintetizador */
   Audio_Start();                   /* desde aquí el audio corre solo por DMA + interrupciones */
-  Enlace_Init();                   /* SPI2 maestro: PB13 SCK, PB15 MOSI, PB12 CS */
-  Song_Start(song_index);          /* canción inicial */
+  /* Prioridades: CubeMX deja el grupo 0 (ninguna interrupción interrumpe a otra) y el audio del DMA
+     tarda varios ms -> se perdían ticks de HAL_GetTick y bytes de la UART. Con el grupo 4:
+     SysTick (0) > UART de los controles (1) > audio (2). */
+  HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
+  HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 2, 0);
+  HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 2, 0);
+
+  Enlace_Init();                   /* SPI2 maestro: PB13 SCK, PB15 MOSI, PB12 CS jugador 1, PB14 CS jugador 2 */
+  Controles_Init();                /* USART1 RX en PA10 <- TX de la ESP32 */
+  Registro_Init();                 /* USART2 -> ST-Link -> COM de la PC */
+  Registro("=== MusicaGame (maestro) ===");
+  Registro("ESP32 TX -> PA10 | SPI2: PB13 SCK, PB15 MOSI, PB12 CS J1, PB14 CS J2 | audio: PA4");
+  Registro("microSD (SPI3): PC10 SCK, PC11 MISO, PC12 MOSI, PD2 CS");
+  Juego_Iniciar(song_index);       /* menú de canciones (o la canción directo, ver juego.h) */
 
   /* USER CODE END 2 */
 
@@ -159,33 +132,31 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* Cambio de canción: cuando song_index cambia (hoy en código, luego por comunicación) */
-    if (song_index != song_playing) {
-      Song_Start(song_index);
+    /* Menús, canción (notas + juez), resultados */
+    Juego_Actualizar();
+
+    /* Bitácora: resumen cada 5 s */
+    static uint32_t tEstado = 0;
+    if (HAL_GetTick() - tEstado >= 5000) {
+      tEstado = HAL_GetTick();
+      Registro("estado: %s | tick %lu | audio %u%% CPU, %lu underruns | ESP32 %lu lineas, %lu errores | SPI %lu paquetes"
+               " | J1 %lu/%lu %lu pts  J2 %lu/%lu %lu pts%s",
+               Juego_Estado(), (unsigned long)Music_GetTick(), audio_cpu_load, (unsigned long)audio_underruns,
+               (unsigned long)controles_lineas, (unsigned long)controles_errores, (unsigned long)enlace_paquetes,
+               (unsigned long)juez_aciertos[0], (unsigned long)juez_fallos[0], (unsigned long)juez_puntos[0],
+               (unsigned long)juez_aciertos[1], (unsigned long)juez_fallos[1], (unsigned long)juez_puntos[1],
+               Juez_EnPausa() ? "  [PAUSA]" : "");
     }
 
-    /* Notas del juego hacia la pantalla (se mandan GH_ANTICIPACION_MS antes de que suenen) */
-    Beats_Actualizar();
-
-    /* [Prueba mute] jugador 1: suena con B1 presionado, muteado al soltarlo */
-    P1_SetMuted(!B1_Sostenido());
-
-    /* al repetir la canción el motor restaura los volúmenes: mantener el mute */
-    if (p1_muted && cur && cur->p1_tracks) {
-      for (uint32_t i = 0; i < cur->p1_n; i++)
-        if (Music_TrackVolumes()[cur->p1_tracks[i]]) Music_SetTrackVolume(cur->p1_tracks[i], 0);
-    }
-
-    /* LD2: parpadea = jugador 1 sonando (y prueba de que el CPU no está bloqueado);
-       encendido fijo = jugador 1 muteado */
+    /* LD2: parpadea = el programa corre; encendido fijo = el jugador 1 está muteado (falló) */
     static uint32_t tLed = 0;
-    if (p1_muted) {
+    if (juez_muteado[0]) {
       HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
     } else if (HAL_GetTick() - tLed >= 250) {
       tLed = HAL_GetTick();
       HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
     }
-    /* Diagnóstico: ver audio_cpu_load y audio_underruns en Live Expressions */
+    /* Diagnóstico (Live Expressions): audio_cpu_load, audio_underruns, controles_lineas, juez_aciertos, juez_fallos */
   }
   /* USER CODE END 3 */
 }

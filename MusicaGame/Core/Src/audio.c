@@ -21,6 +21,7 @@ extern TIM_HandleTypeDef htim6;
 static uint16_t audio_buffer[AUDIO_BUFFER_SIZE];   /* lo lee el DMA */
 static int32_t  mix_buffer[HALF_SIZE];             /* suma de voces antes de convertir */
 static uint16_t master_volume = AUDIO_MASTER_VOLUME;
+static volatile uint8_t pausa = 0;
 
 volatile uint8_t  audio_cpu_load = 0;
 volatile uint32_t audio_underruns = 0;
@@ -68,6 +69,9 @@ void Audio_PlaySong(const Song *song, uint8_t loop) {
 
 void Audio_SetMasterVolume(uint16_t vol) { master_volume = vol; }
 
+/* En pausa no se avanza la canción ni las voces: al quitarla sigue exactamente donde estaba */
+void Audio_Pausa(uint8_t si) { pausa = si; }
+
 /* ---------------------------------------------------------------------------------------------
  * Mezcla -> DAC de 12 bits
  *   Cada voz aporta como máximo ±32767 (Q15) ya multiplicada por envolvente y volúmenes.
@@ -77,6 +81,12 @@ void Audio_SetMasterVolume(uint16_t vol) { master_volume = vol; }
  * ------------------------------------------------------------------------------------------- */
 void Audio_FillBuffer(uint16_t *buf, uint32_t n) {
 	uint32_t t0 = DWT->CYCCNT;
+
+	if (pausa) {                                       /* silencio (mitad de escala) y el tiempo no corre */
+		for (uint32_t i = 0; i < n; i++) buf[i] = 2048;
+		audio_cpu_load = 0;
+		return;
+	}
 
 	memset(mix_buffer, 0, n * sizeof(int32_t));
 

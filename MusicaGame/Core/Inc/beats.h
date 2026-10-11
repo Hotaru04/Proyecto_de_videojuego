@@ -18,7 +18,7 @@
 /* ---------- Ajustes de cómo se "tabla" la canción ---------- */
 #define BEATS_SEPARACION_MS   200   /* mínimo entre dos notas del mismo jugador (una nota mide 48 px = 192 ms) */
 #define BEATS_LARGA_MIN_MS    400   /* una nota que dura esto o más se vuelve nota larga */
-#define BEATS_ACORDE_NOTAS    3     /* con esta cantidad de notas a la vez (o más) se pide acorde de 2 botones */
+#define BEATS_ACORDE_NOTAS    255   /* sin acordes: una nota por botón (con 3, p. ej., 3 notas a la vez piden 2 botones) */
 #define BEATS_LATENCIA_MS     12    /* el audio sale ~1.5 mitades de buffer después de calcularse */
 
 #define BEATS_MAX_PISTAS      8     /* pistas máximas por jugador */

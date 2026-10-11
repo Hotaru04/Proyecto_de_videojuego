@@ -2,10 +2,9 @@
  * songs.h
  * Tabla de canciones. El índice de la tabla elige qué canción suena.
  *
- * Para agregar una canción:
- *   1. Copia sus .h (song_x.h y song_x_canalN.h) a Core/Inc.
- *   2. En songs.c: #include "song_x.h" y agrega una fila a song_table[].
- * El orden de las filas = el número que mandará el otro STM (UART/SPI/I2C) para elegirla.
+ * Para agregar una canción: en tools/midi_to_c_gui.py, botón "Agregar al juego"
+ * (o copia sus .h a Core/Inc y corre  python tools/registrar_canciones.py).
+ * Eso regenera canciones_tabla.h: los números quedan como CANCION_<NOMBRE>.
  */
 #ifndef INC_SONGS_H_
 #define INC_SONGS_H_
@@ -20,6 +19,7 @@ typedef struct {
 	uint16_t       master;      /* volumen maestro para esta canción (0 = el normal, 224) */
 	const uint8_t *p2_tracks;   /* pistas del jugador 2 (canal 2); NULL si no tiene */
 	uint8_t        p2_n;        /* cuántas pistas tiene el jugador 2 */
+	const char    *titulo;      /* nombre que se muestra en el menú */
 } SongEntry;
 
 extern const SongEntry song_table[];

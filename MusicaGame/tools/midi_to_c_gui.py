@@ -17,6 +17,11 @@ Qué hace:
   4. Código C: el .h tal cual se va a exportar.
   5. Memoria: eventos, bytes de flash, polifonía y duración por pista.
   6. Exportar: escribe los .h en la carpeta que elijas.
+  7. Agregar al juego: escribe los .h en Core/Inc de MusicaGame y la registra en la tabla de canciones
+     (canciones_tabla.h, con registrar_canciones.py). Canal 1 = notas del jugador 1, canal 2 = jugador 2.
+     Pon un "Nombre C" corto (p. ej. animals): es el nombre de la canción en el código (CANCION_ANIMALS).
+  8. Guardar en microSD: escribe TODAS las canciones del juego como .ghs en <tarjeta>/CANCIONES/
+     (MusicaGame las lee de ahí; si no hay tarjeta usa las que están en la flash).
 """
 import os
 import sys
@@ -161,7 +166,9 @@ class App(tk.Tk):
         cb.bind('<<ComboboxSelected>>', lambda e: self.schedule())
         ttk.Checkbutton(top, text="Un .h por canal", variable=self.split, style='Top.TCheckbutton',
                         command=self.schedule).pack(side='left', padx=(0, 12))
-        ttk.Button(top, text="💾  Exportar .h…", style='Accent.TButton', command=self.export).pack(side='right')
+        ttk.Button(top, text="💳  Guardar en microSD", command=self.save_sd).pack(side='right')
+        ttk.Button(top, text="➕  Agregar al juego", style='Accent.TButton', command=self.add_to_game).pack(side='right', padx=(0, 8))
+        ttk.Button(top, text="💾  Exportar .h…", command=self.export).pack(side='right', padx=(0, 8))
         for v in (self.song, self.bpm):
             v.trace_add('write', lambda *a: self.schedule())
 
@@ -513,6 +520,66 @@ class App(tk.Tk):
         messagebox.showinfo("Listo", f"Escribí {len(self.files)} archivo(s) en:\n{d}\n\n"
                                      f"En main.c:\n  #include \"song_{song}.h\"\n  Audio_PlaySong(&song_{song}, 0);")
         self.status.set(f"Exportado a {d}")
+
+    def add_to_game(self):
+        """Escribe los .h en Core/Inc de MusicaGame y regenera canciones_tabla.h."""
+        if not self.files:
+            messagebox.showinfo("Nada que agregar", "Abre un MIDI y selecciona al menos una pista.")
+            return
+        song = mc.c_ident(self.song.get()) or "cancion"
+        if len(song) > 28 and not messagebox.askyesno(
+                "Nombre largo", f"El nombre C es '{song}'.\n\nMejor uno corto (p. ej. 'animals'): escríbelo en "
+                                "\"Nombre C\" arriba.\n\n¿Agregarla con este nombre de todos modos?"):
+            return
+        inc = os.path.normpath(os.path.join(AQUI, '..', 'Core', 'Inc'))
+        if not os.path.isdir(inc):
+            inc = filedialog.askdirectory(title="Carpeta Core/Inc del proyecto MusicaGame")
+            if not inc:
+                return
+        existentes = [f for f, _ in self.files if os.path.exists(os.path.join(inc, f))]
+        if existentes and not messagebox.askyesno("Ya existe", "Esta canción ya está en el juego:\n  " +
+                                                   "\n  ".join(existentes) + "\n\n¿Reemplazarla?"):
+            return
+        for f, txt in self.files:
+            with open(os.path.join(inc, f), 'w', encoding='utf-8', newline='') as fh:
+                fh.write(txt.replace('\r\n', '\n').replace('\n', '\r\n'))
+        try:
+            import registrar_canciones as rc
+            lista = rc.registrar(inc)
+        except SystemExit as e:
+            messagebox.showerror("Error al registrar", str(e))
+            return
+        idx = [i for i, (n, _) in enumerate(lista) if n == song]
+        num = idx[0] if idx else '?'
+        texto = "\n".join(f"  {i}  {d['titulo']}" for i, (n, d) in enumerate(lista))
+        messagebox.showinfo("Agregada al juego",
+                            f"'{song}' quedó registrada como CANCION_{song.upper()} (número {num}).\n\n"
+                            f"Canciones del juego:\n{texto}\n\n"
+                            "Compila y flashea MusicaGame para usarla.")
+        self.status.set(f"Agregada al juego: CANCION_{song.upper()} = {num}")
+
+    def save_sd(self):
+        """Escribe todas las canciones registradas en el juego como .ghs en la microSD."""
+        inc = os.path.normpath(os.path.join(AQUI, '..', 'Core', 'Inc'))
+        if not os.path.isdir(inc):
+            inc = filedialog.askdirectory(title="Carpeta Core/Inc del proyecto MusicaGame")
+            if not inc:
+                return
+        d = filedialog.askdirectory(title="Unidad de la microSD (p. ej. E:\\)")
+        if not d:
+            return
+        try:
+            import registrar_canciones as rc
+            rc.registrar(inc)
+            rc.exportar_sd(inc, d)
+            lista = rc.canciones(inc)
+        except Exception as e:                       # noqa: BLE001 - mostrar cualquier error al usuario
+            messagebox.showerror("Error", str(e))
+            return
+        texto = "\n".join(f"  {n}.ghs  -  {dd['titulo']}" for n, dd in lista)
+        messagebox.showinfo("Listo", f"Escribí {len(lista)} canciones en:\n{os.path.join(d, 'CANCIONES')}\n\n{texto}\n\n"
+                                     "Expulsa la tarjeta con seguridad antes de sacarla.")
+        self.status.set(f"microSD: {len(lista)} canciones en {d}")
 
 
 if __name__ == '__main__':

@@ -6,8 +6,10 @@
 #include "gh_protocolo.h"
 #include "main.h"
 
-#define CS_BAJO()   (GPIOB->BSRR = GPIO_BSRR_BR12)
-#define CS_ALTO()   (GPIOB->BSRR = GPIO_BSRR_BS12)
+/* CS: PB12 = jugador 1, PB14 = jugador 2 (activos en bajo) */
+#define CS_PINES(dest)  ((((dest) & ENLACE_J1) ? GPIO_BSRR_BS12 : 0u) | (((dest) & ENLACE_J2) ? GPIO_BSRR_BS14 : 0u))
+#define CS_BAJO(dest)   (GPIOB->BSRR = CS_PINES(dest) << 16)
+#define CS_ALTO()       (GPIOB->BSRR = GPIO_BSRR_BS12 | GPIO_BSRR_BS14)
 
 /* Separación mínima entre paquetes: le da tiempo al esclavo de volver a armar su recepción */
 #define ENLACE_PAUSA_US  40u
@@ -25,15 +27,16 @@ void Enlace_Init(void) {
 	RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
 	(void)RCC->APB1ENR;                                   /* espera a que el reloj quede activo */
 
-	/* PB12: salida push-pull, empieza en alto (no seleccionado) */
+	/* PB12 y PB14: salidas push-pull, empiezan en alto (ninguna pantalla seleccionada) */
 	CS_ALTO();
-	GPIOB->MODER   = (GPIOB->MODER & ~(3u << (12 * 2))) | (1u << (12 * 2));
+	GPIOB->MODER   = (GPIOB->MODER & ~((3u << (12 * 2)) | (3u << (14 * 2))))
+	               | (1u << (12 * 2)) | (1u << (14 * 2));
 	/* PB13 (SCK) y PB15 (MOSI): función alterna 5 = SPI2 */
 	GPIOB->MODER   = (GPIOB->MODER & ~((3u << (13 * 2)) | (3u << (15 * 2))))
 	               | (2u << (13 * 2)) | (2u << (15 * 2));
 	GPIOB->AFR[1]  = (GPIOB->AFR[1] & ~((0xFu << ((13 - 8) * 4)) | (0xFu << ((15 - 8) * 4))))
 	               | (5u << ((13 - 8) * 4)) | (5u << ((15 - 8) * 4));
-	GPIOB->OSPEEDR |= (2u << (12 * 2)) | (2u << (13 * 2)) | (2u << (15 * 2));   /* velocidad "fast" */
+	GPIOB->OSPEEDR |= (2u << (12 * 2)) | (2u << (13 * 2)) | (2u << (14 * 2)) | (2u << (15 * 2));   /* velocidad "fast" */
 
 	/* DWT ya lo enciende Audio_Init, pero por si se llama antes */
 	CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
@@ -47,7 +50,7 @@ void Enlace_Init(void) {
 	ultimo_fin = DWT->CYCCNT;
 }
 
-void Enlace_Enviar(uint8_t tipo, uint8_t d0, uint8_t d1, uint8_t d2, uint8_t d3, uint8_t d4) {
+void Enlace_Enviar(uint8_t destinos, uint8_t tipo, uint8_t d0, uint8_t d1, uint8_t d2, uint8_t d3, uint8_t d4) {
 	uint8_t p[GH_PKT_LEN] = { GH_PKT_SYNC, tipo, d0, d1, d2, d3, d4, 0 };
 	p[7] = GH_Checksum(p);
 
@@ -55,7 +58,8 @@ void Enlace_Enviar(uint8_t tipo, uint8_t d0, uint8_t d1, uint8_t d2, uint8_t d3,
 	uint32_t pausa = (SystemCoreClock / 1000000u) * ENLACE_PAUSA_US;
 	while (DWT->CYCCNT - ultimo_fin < pausa) { }
 
-	CS_BAJO();
+	if (!(destinos & ENLACE_AMBOS)) return;
+	CS_BAJO(destinos);                                    /* con ENLACE_AMBOS las dos pantallas lo reciben */
 	Esperar_us(2);                                        /* tiempo de preparación del esclavo */
 	for (uint32_t i = 0; i < GH_PKT_LEN; i++) {
 		while (!(SPI2->SR & SPI_SR_TXE)) { }
