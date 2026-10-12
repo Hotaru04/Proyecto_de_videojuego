@@ -17,13 +17,13 @@
 
 static const TrackDef the_night_begins_to_shine_tracks[] = {
 	/* canal 1 */
-	TRACK(the_night_begins_to_shine_distortion_guitar, INST_GUITAR, VOL(0.60)),   /* pista 0 */
+	TRACK(the_night_begins_to_shine_distortion_guitar, INST_GUITAR, VOL(0.62)),   /* pista 0 */
 	/* canal 2 */
-	TRACK(the_night_begins_to_shine_electric_drum_kit, INST_DRUMS, VOL(0.66)),   /* pista 1 */
+	TRACK(the_night_begins_to_shine_bass_guitar, INST_BASS, VOL(0.60)),   /* pista 1 */
 	/* canal 3 */
-	TRACK(the_night_begins_to_shine_bass_guitar, INST_BASS, VOL(0.30)),   /* pista 2 */
-	TRACK(the_night_begins_to_shine_electric_guitar, INST_GUITAR, VOL(0.30)),   /* pista 3 */
-	TRACK(the_night_begins_to_shine_synth_pluck, INST_SYNTH, VOL(0.30)),   /* pista 4 */
+	TRACK(the_night_begins_to_shine_electric_guitar, INST_GUITAR, VOL(0.30)),   /* pista 2 */
+	TRACK(the_night_begins_to_shine_synth_pluck, INST_SYNTH, VOL(0.30)),   /* pista 3 */
+	TRACK(the_night_begins_to_shine_electric_drum_kit, INST_DRUMS, VOL(0.30)),   /* pista 4 */
 };
 
 static const Song song_the_night_begins_to_shine = { "the_night_begins_to_shine", SONG_THE_NIGHT_BEGINS_TO_SHINE_BPM, 5, the_night_begins_to_shine_tracks };

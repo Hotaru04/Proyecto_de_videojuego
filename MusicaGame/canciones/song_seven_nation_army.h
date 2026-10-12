@@ -17,9 +17,9 @@
 
 static const TrackDef seven_nation_army_tracks[] = {
 	/* canal 1 */
-	TRACK(seven_nation_army_guitar_w__octave_bass, INST_BASS, VOL(0.30)),   /* pista 0 */
+	TRACK(seven_nation_army_guitar_w__octave_bass, INST_BASS, VOL(0.51)),   /* pista 0 */
 	/* canal 2 */
-	TRACK(seven_nation_army_drums__meg_white, INST_DRUMS, VOL(0.30)),   /* pista 1 */
+	TRACK(seven_nation_army_drums__meg_white, INST_DRUMS, VOL(0.53)),   /* pista 1 */
 	/* canal 3 */
 	TRACK(seven_nation_army_guitar_1__jack_white__open_a_tuning, INST_GUITAR, VOL(0.30)),   /* pista 2 */
 	TRACK(seven_nation_army_solo_guitar___jack_white_standard_tuning, INST_GUITAR, VOL(0.30)),   /* pista 3 */
