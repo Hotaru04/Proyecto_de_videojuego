@@ -212,6 +212,31 @@ void Beats_Detener(void) {
 	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_ALTO, 0, 0, 0, 0, 0);
 }
 
+/* Manda la gema actual del jugador j: llega al botón dentro de faltan_ms */
+static void Mandar(uint8_t j, Jugador *J, uint32_t faltan_ms) {
+	uint32_t faltan = faltan_ms + BEATS_LATENCIA_MS;
+	uint32_t largo  = Ticks_A_Ms(J->gema.largo);
+	if (faltan > 0xFFFF) faltan = 0xFFFF;
+	if (largo  > 0xFFFF) largo  = 0xFFFF;
+	uint8_t c = 0;                                        /* una nota por botón: el carril más bajo */
+	while (c < 3 && !(J->gema.carriles & (1u << c))) c++;
+	Juez_NotaNueva(j, c, (uint16_t)faltan, (uint16_t)largo);   /* el juez la registra y la manda */
+	beats_enviadas[j]++;
+}
+
+void Beats_Previa(uint32_t faltan_ms) {
+	if (!activo) return;
+	for (uint8_t j = 0; j < 2; j++) {
+		Jugador *J = &jug[j];
+		while (J->hay_gema) {
+			uint32_t t = Ticks_A_Ms(J->gema.tick) + faltan_ms;   /* cuánto le falta a esta nota */
+			if (t > GH_ANTICIPACION_MS) break;
+			Mandar(j, J, t);
+			J->hay_gema = Siguiente_Gema(J, &J->gema);
+		}
+	}
+}
+
 void Beats_Actualizar(void) {
 	if (!activo || !Music_IsPlaying()) return;
 
@@ -222,18 +247,8 @@ void Beats_Actualizar(void) {
 	for (uint8_t j = 0; j < 2; j++) {
 		Jugador *J = &jug[j];
 		while (J->hay_gema && J->gema.tick <= ahora + anticipa_ticks) {
-			if (J->gema.tick >= ahora) {
-				uint32_t faltan = Ticks_A_Ms(J->gema.tick - ahora) + BEATS_LATENCIA_MS;
-				uint32_t largo  = Ticks_A_Ms(J->gema.largo);
-				if (faltan > 0xFFFF) faltan = 0xFFFF;
-				if (largo  > 0xFFFF) largo  = 0xFFFF;
-				uint8_t c = 0;                                /* una nota por botón: el carril más bajo */
-				while (c < 3 && !(J->gema.carriles & (1u << c))) c++;
-				Juez_NotaNueva(j, c, (uint16_t)faltan, (uint16_t)largo);   /* el juez la registra y la manda */
-				beats_enviadas[j]++;
-			} else {
-				beats_tarde++;                                /* ya pasó: no tiene sentido mandarla */
-			}
+			if (J->gema.tick >= ahora) Mandar(j, J, Ticks_A_Ms(J->gema.tick - ahora));
+			else beats_tarde++;                           /* ya pasó: no tiene sentido mandarla */
 			J->hay_gema = Siguiente_Gema(J, &J->gema);
 		}
 	}

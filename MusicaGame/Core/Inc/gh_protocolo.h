@@ -59,20 +59,27 @@
 
 /* Cambia lo que muestra la pantalla (la pista se detiene mientras hay un menú).
  *   [2] GH_PANT_*   [3] opción marcada   [4] cuántas opciones
+ *   [5] (canciones) primera canción visible: se ven GH_MENU_FILAS a partir de ella (la lista se recorre)
  *   [5] (resultados) ganador: 0 empate, 1 o 2      [6] (resultados) jugador de esta pantalla: 1 o 2
  * La pista vuelve sola con el siguiente GH_PKT_CANCION. */
 #define GH_PKT_PANTALLA 0x08
 #define GH_PANT_CANCIONES   1     /* lista de canciones (textos con GH_PKT_TEXTO) */
 #define GH_PANT_RESULTADOS  2     /* ganador y puntos (GH_PKT_RESULTADO antes) */
 #define GH_PANT_FIN         3     /* "SELECCIONAR CANCION" / "REVANCHA" */
+#define GH_MENU_FILAS       6     /* canciones visibles a la vez */
 
-/* Un pedazo de texto (títulos de canciones).  [2] línea 0..7   [3] posición   [4..6] 3 letras (0 = fin) */
+/* Un pedazo de texto (títulos de canciones).  [2] fila visible 0..GH_MENU_FILAS-1   [3] posición   [4..6] 3 letras (0 = fin)
+ * Solo se mandan los títulos de las filas que se ven; al recorrer la lista se vuelven a mandar. */
 #define GH_PKT_TEXTO    0x09
 #define GH_TEXTO_LINEAS 8
 #define GH_TEXTO_LARGO  30
 
 /* Puntos para la pantalla de resultados.  [2] 1 = los de esta pantalla, 2 = los del rival   [3..6] puntos */
 #define GH_PKT_RESULTADO 0x0A
+
+/* Cuenta atrás antes de la canción.  [2] número a mostrar (3, 2, 1); 0 = se acabó, la pista vuelve a correr.
+ * Mientras dura, la pista está quieta (sin notas). Llega después del GH_PKT_CANCION. */
+#define GH_PKT_CUENTA   0x0B
 
 /* Eventos del juez */
 #define GH_EVT_ACIERTO    1   /* nota normal atinada: desaparece */
