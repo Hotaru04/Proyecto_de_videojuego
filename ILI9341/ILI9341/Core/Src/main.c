@@ -28,6 +28,7 @@
 #include "gh_pista.h"     // [GH] pista con scroll por hardware (notas que llegan por SPI)
 #include "gh_enlace.h"    // [GH] SPI2 esclavo: paquetes de MusicaGame
 #include "gh_menu.h"      // [GH] lista de canciones, resultados y menú final
+#include <string.h>
 
 /* USER CODE END Includes */
 
@@ -41,6 +42,15 @@
 /* [GH] 1 = probar la pantalla SIN MusicaGame: inventa notas cada GH_PRUEBA_CADA_MS */
 #define GH_PRUEBA_SIN_SPI   0
 #define GH_PRUEBA_CADA_MS   350
+
+
+
+// Variables para prueba sin maestro
+
+//#define GH_MODO_PRUEBA_MENU    1
+//#define GH_MENU_TEST_DELAY     2000 // ms para cambiar de opción automáticamente
+
+
 
 /* USER CODE END PD */
 
@@ -162,34 +172,174 @@ int main(void)
 
 	//  LCD_Print("Hola Mundo", 20, 100, 1, 0x001F, 0xCAB9);
 
+
+///////////////////////////////////////////////////////////////////////////////////////////////
+//
+//#if GH_MODO_PRUEBA_MENU
+//  // Al arrancar, desactivamos la pista de notas para que se pueda ver el menú completo.
+//  GH_Pista_Desactivar();
+//#endif
+
+
+ ////////////////////////////////////////////////////////////////////////////
+
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
 
-		/* 1. Paquetes de MusicaGame (notas, aciertos / fallos, botones, menús) */
-		{
-			GH_Paquete pk;
-			while (GH_Enlace_Leer(&pk))
-				if (!GH_Menu_Paquete(pk.b)) GH_Pista_Paquete(pk.b, pk.t_ms);   /* menús primero; lo demás es de la pista */
-		}
 
-#if GH_PRUEBA_SIN_SPI
+//////////////////////////////////////////
+
+//
+//#if !GH_MODO_PRUEBA_MENU
+//    /* 1. Recepción de paquetes reales desde el STM32 Maestro (Modo Normal) */
+//    {
+//      GH_Paquete pk;
+//      while (GH_Enlace_Leer(&pk)) {
+//        if (!GH_Menu_Paquete(pk.b)) {
+//          GH_Pista_Paquete(pk.b, pk.t_ms);
+//        }
+//      }
+//    }
+//#else
+//    /* PUERTA TRASERA ACTIVA: Simulación autónoma del menú */
+//    {
+//      static uint32_t tMenuTest = 0;
+//      static uint8_t opcionMock = 0;
+//      static uint8_t textoInyectado = 0;
+//      static uint8_t etapaSimulacion = 0; // 0 = Pantalla Inicio, 1 = Lista Canciones
+//      static uint32_t delayActual = 0;
+//
+//      // Inyección de nombres de canciones para la simulación
+//      if (!textoInyectado) {
+//
+//          const char *cancionesPrueba[3] = {
+//              "ANIMALS",
+//              "MIGHTY MORPHIN POWER RANGERS",
+//              "THE NIGHT BEGINS TO SHINE"
+//          };
+//
+//          // Enviar los nombres en paquetes de 3 caracteres
+//          for (uint8_t fila = 0; fila < 3; fila++) {
+//
+//              const char *nombre = cancionesPrueba[fila];
+//              uint8_t longitud = (uint8_t)strlen(nombre);
+//
+//              for (uint8_t pos = 0; pos <= longitud; pos += 3) {
+//
+//                  uint8_t pkt[8] = {
+//                      0xA5, 0x09, fila, pos,
+//                      0, 0, 0, 0
+//                  };
+//
+//                  // Colocar hasta 3 caracteres por paquete
+//                  for (uint8_t k = 0; k < 3; k++) {
+//                      if (pos + k < longitud) {
+//                          pkt[4 + k] = nombre[pos + k];
+//                      }
+//                  }
+//
+//                  // Checksum del protocolo
+//                  pkt[7] = pkt[1] ^ pkt[2] ^ pkt[3] ^
+//                           pkt[4] ^ pkt[5] ^ pkt[6];
+//
+//                  GH_Menu_Paquete(pkt);
+//              }
+//          }
+//
+//          textoInyectado = 1;
+//      }
+//
+//      // Máquina de estados de la simulación
+//      if (HAL_GetTick() - tMenuTest >= delayActual) {
+//        tMenuTest = HAL_GetTick();
+//
+//        if (etapaSimulacion == 0) {
+//            // Mostrar la Pantalla de Inicio (Título)
+//            uint8_t paquete_inicio[8] = { 0xA5, 0x08, 4, 0, 0, 0, 0, 0 }; // 4 = GH_PANT_INICIO
+//            GH_Menu_Paquete(paquete_inicio);
+//
+//            etapaSimulacion = 1; // La próxima vez pasamos a canciones
+//            delayActual = 3000;  // Esperamos 3 segundos viendo el título
+//        }
+//        else if (etapaSimulacion == 1) {
+//            // Mostrar el Menú de Canciones
+//            uint8_t paquete_menu[8] = { 0xA5, 0x08, 1, opcionMock, 3, 0, 0, 0 }; // 1 = GH_PANT_CANCIONES
+//            GH_Menu_Paquete(paquete_menu);
+//
+//            opcionMock = (opcionMock + 1) % 3; // Alternar opciones
+//            delayActual = 1500; // Cambiar cada 1.5 segundos
+//        }
+//      }
+//    }
+//#endif
+//
+//#if GH_PRUEBA_SIN_SPI && !GH_MODO_PRUEBA_MENU
+//    /* Prueba de notas cayendo sin SPI */
+//    {
+//      static uint32_t tPrueba = 0;
+//      static uint8_t  iPrueba = 0;
+//      if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
+//        tPrueba = HAL_GetTick();
+//        GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, iPrueba & 0x3F, tPrueba + GH_ANTICIPACION_MS,
+//                             (iPrueba % 4 == 3) ? 600 : 0);
+//        iPrueba++;
+//      }
+//    }
+//#endif
+
+////////////////////////////////////////////
+
+
+
+//		/* 1. Paquetes de MusicaGame (notas, aciertos / fallos, botones, menús) */
+//		{
+//			GH_Paquete pk;
+//			while (GH_Enlace_Leer(&pk))
+	//			if (!GH_Menu_Paquete(pk.b)) GH_Pista_Paquete(pk.b, pk.t_ms);   /* menús primero; lo demás es de la pista */
+	//	}
+
+//#if GH_PRUEBA_SIN_SPI
 		/* Prueba: notas inventadas, una por carril en orden, cada 4 una larga */
-		{
-			static uint32_t tPrueba = 0;
-			static uint8_t  iPrueba = 0;
-			if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
-				tPrueba = HAL_GetTick();
-				GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, iPrueba & 0x3F, tPrueba + GH_ANTICIPACION_MS,
-				                     (iPrueba % 4 == 3) ? 600 : 0);
-				iPrueba++;
-			}
-		}
-#endif
+	//	{
+		//	static uint32_t tPrueba = 0;
+			//static uint8_t  iPrueba = 0;
+			//if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
+				//tPrueba = HAL_GetTick();
+				//GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, iPrueba & 0x3F, tPrueba + GH_ANTICIPACION_MS,
+				          //           (iPrueba % 4 == 3) ? 600 : 0);
+				//iPrueba++;
+			//}
+		//}
+//#endif
 
 		/* 2. Mover la pista y dibujar los botones */
+		/* ====================================================
+		 * RECEPCION DE PAQUETES DEL STM32 MAESTRO
+		 * ==================================================== */
+
+		{
+		    GH_Paquete pk;
+
+		    while (GH_Enlace_Leer(&pk)) {
+
+		        /* Primero procesar los paquetes del menu */
+		        if (!GH_Menu_Paquete(pk.b)) {
+
+		            /* Si no es un paquete del menu,
+		               pertenece a la pista de juego */
+		            GH_Pista_Paquete(pk.b, pk.t_ms);
+		        }
+		    }
+		}
+
+		/* Actualizar texto desplazable del menu */
+		GH_Menu_Actualizar();
+
+		/* Actualizar pista y notas cuando corresponda */
 		GH_Pista_Actualizar();
 
 

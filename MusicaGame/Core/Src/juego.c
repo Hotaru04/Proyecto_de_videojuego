@@ -15,11 +15,40 @@
 #include "main.h"
 #include "canciones_sd.h"
 
-enum { E_MENU_CANCIONES = 0, E_CUENTA, E_ENTRADA, E_JUGANDO, E_TERMINANDO, E_RESULTADOS, E_MENU_FIN };
-static const char *const NOMBRE_ESTADO[] = { "menu de canciones", "cuenta atras", "entrada", "jugando", "terminando",
-                                             "resultados", "menu final" };
+//enum { E_MENU_CANCIONES = 0, E_CUENTA, E_ENTRADA, E_JUGANDO, E_TERMINANDO, E_RESULTADOS, E_MENU_FIN };
+//static const char *const NOMBRE_ESTADO[] = { "menu de canciones", "cuenta atras", "entrada", "jugando", "terminando",
+//                                             "resultados", "menu final" };
 
-static uint8_t  estado = E_MENU_CANCIONES;
+/////////////////////////////
+
+enum {
+    E_INICIO = 0,
+    E_MENU_CANCIONES,
+    E_CUENTA,
+    E_ENTRADA,
+    E_JUGANDO,
+    E_TERMINANDO,
+    E_RESULTADOS,
+    E_MENU_FIN
+};
+
+static const char *const NOMBRE_ESTADO[] = {
+    "pantalla de inicio",
+    "menu de canciones",
+    "cuenta atras",
+    "entrada",
+    "jugando",
+    "terminando",
+    "resultados",
+    "menu final"
+};
+
+////////////////////////////
+
+//static uint8_t  estado = E_MENU_CANCIONES;
+//////////////
+static uint8_t estado = E_INICIO;
+//////////////////
 static uint8_t  cancion = 0;          /* la que se está jugando / la marcada en el menú */
 static uint8_t  cursor = 0;
 static uint32_t t_estado = 0;         /* cuándo se entró al estado actual */
@@ -92,6 +121,21 @@ static void Ir_A(uint8_t e) {
 	Registro("Juego: %s", NOMBRE_ESTADO[e]);
 }
 
+///////////////////////////
+//Pantalla de inicio
+
+static void Menu_Inicio(void)
+{
+    /* Mostrar pantalla inicial en ambos jugadores */
+    Pantalla(GH_PANT_INICIO, 0, 0, 0);
+
+    /* Cambiar al estado de inicio */
+    Ir_A(E_INICIO);
+}
+
+///////////////////////////////
+
+
 static void Menu_Canciones(void) {
 	cursor = (cancion < Total()) ? cancion : 0;
 	Mostrar_Canciones(1);
@@ -159,7 +203,10 @@ void Juego_Iniciar(uint8_t cancion_inicial) {
 	Buscar_SD();
 	cancion = (cancion_inicial < Total()) ? cancion_inicial : 0;
 #if JUEGO_INICIAR_EN_MENU
-	Menu_Canciones();
+	//Menu_Canciones();
+	////////////////////////////
+	Menu_Inicio();
+	///////////////////////
 #else
 	Jugar(cancion);
 #endif
@@ -189,10 +236,37 @@ static uint8_t Navegar(uint8_t cuantas, uint8_t modo) {
 
 void Juego_Actualizar(void) {
 	uint32_t ahora = HAL_GetTick();
-	uint8_t reenviar = (estado == E_MENU_CANCIONES || estado == E_MENU_FIN) && (ahora - t_reenvio >= JUEGO_REENVIO_MS);
+	//uint8_t reenviar = (estado == E_MENU_CANCIONES || estado == E_MENU_FIN) && (ahora - t_reenvio >= JUEGO_REENVIO_MS);
+	/////////////////////////////
+	uint8_t reenviar = (estado == E_INICIO || estado == E_MENU_CANCIONES || estado == E_MENU_FIN) && (ahora - t_reenvio >= JUEGO_REENVIO_MS);
+	////////////////////////
 	if (reenviar) t_reenvio = ahora;
 
 	switch (estado) {
+	/////////////////////////////
+	case E_INICIO: {
+	    /* Reenviar BEAT HERO si corresponde */
+	    if (reenviar) {
+	        Pantalla(GH_PANT_INICIO, 0, 0, 0);
+	    }
+
+	    /* Esperar Start de cualquiera de los jugadores */
+	    Control_Evento ev;
+
+	    while (Controles_Siguiente(&ev)) {
+
+	        if (ev.presionado && ev.carril == CONTROL_START) {
+
+	            /* Pasar al menu de canciones */
+	            Menu_Canciones();
+	            break;
+	        }
+	    }
+
+	    break;
+	}
+	/////////////////////////////
+
 		case E_MENU_CANCIONES:
 			if (!Total() && ahora - t_buscar_sd >= JUEGO_BUSCAR_SD_MS) {   /* ¿ya metieron la tarjeta? */
 				Buscar_SD();
