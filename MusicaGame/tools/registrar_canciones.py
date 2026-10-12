@@ -1,25 +1,22 @@
 #!/usr/bin/env python3
-"""
-registrar_canciones.py - Indexa las canciones del proyecto MusicaGame.
+r"""
+registrar_canciones.py - Biblioteca de canciones de MusicaGame y exportación a la microSD.
 
-Busca en Core/Inc todos los song_<nombre>.h generados por midi_to_c.py y escribe Core/Inc/canciones_tabla.h:
-    - los #include de cada canción,
-    - CANCION_<NOMBRE> = su número (para song_index),
-    - la fila de cada una para song_table[] (pistas del jugador 1 = canal 1, jugador 2 = canal 2).
-songs.c ya incluye ese archivo: no hay que tocar código a mano.
+Las canciones YA NO van en la flash del STM: sus .h (los que genera midi_to_c.py) se guardan en
+MusicaGame/canciones/ (fuera de Core: no se compilan) y de ahí se convierten a .ghs para la microSD.
+MusicaGame solo lee la tarjeta.
 
 Uso:
-    python registrar_canciones.py                      (busca ../Core/Inc desde esta carpeta)
-    python registrar_canciones.py --inc RUTA/Core/Inc
-    python registrar_canciones.py --renombrar viejo nuevo     (cambia el nombre C de una canción ya exportada)
-    python registrar_canciones.py --quitar nombre             (borra los .h de una canción)
-    python registrar_canciones.py --sd E:\                   (escribe las canciones a la microSD: E:\CANCIONES\*.ghs)
-    python registrar_canciones.py --sd carpeta                (o a una carpeta, para copiarla después a la tarjeta)
+    python registrar_canciones.py                     (lista la biblioteca: canciones, notas, avisos)
+    python registrar_canciones.py --sd E:\            (escribe TODAS a la microSD: E:\CANCIONES\*.ghs)
+    python registrar_canciones.py --sd carpeta         (o a una carpeta, para copiarla después a la tarjeta)
+    python registrar_canciones.py --renombrar viejo nuevo     (cambia el nombre C de una canción)
+    python registrar_canciones.py --quitar nombre             (borra los .h de una canción de la biblioteca)
+    python registrar_canciones.py --biblioteca RUTA           (otra carpeta de canciones)
 
 Opcional, dentro del song_<nombre>.h (el script los respeta):
     #define SONG_<NOMBRE>_TITULO "Texto del menu"     (si no, se usa el nombre en mayúsculas)
     #define SONG_<NOMBRE>_MASTER 160                  (volumen maestro si la canción recorta; 0 = normal)
-    #define SONG_<NOMBRE>_ORDEN  1                    (posición en el menú; si no, orden alfabético)
 """
 import argparse
 import glob
@@ -28,8 +25,10 @@ import re
 import sys
 
 AQUI = os.path.dirname(os.path.abspath(__file__))
-INC_POR_DEFECTO = os.path.normpath(os.path.join(AQUI, '..', 'Core', 'Inc'))
-TABLA = 'canciones_tabla.h'
+BIBLIOTECA = os.path.normpath(os.path.join(AQUI, '..', 'canciones'))           # los song_*.h
+NOTAS_H = os.path.normpath(os.path.join(AQUI, '..', 'Core', 'Inc', 'notes.h'))  # nombres de las notas (C4 = 60...)
+MAX_NOTAS = 14000      # = CANCIONES_SD_MAX_NOTAS en Core/Inc/canciones_sd.h
+MAX_CANCIONES = 32     # = CANCIONES_SD_MAX
 
 
 def leer(path):
@@ -71,43 +70,18 @@ def canciones(inc):
     return res
 
 
-def registrar(inc):
-    lista = canciones(inc)
-    if not lista:
-        sys.exit(f"No encontré canciones (song_*.h de midi_to_c.py) en {inc}")
-    L = ["/*",
-         f" * {TABLA}",
-         " * GENERADO por tools/registrar_canciones.py  ->  NO editar a mano (se sobrescribe).",
-         " * Para agregar una canción: expórtala con midi_to_c_gui.py (botón \"Agregar al juego\")",
-         " * o copia sus .h a Core/Inc y corre:  python tools/registrar_canciones.py",
-         " */",
-         "#ifndef INC_CANCIONES_TABLA_H_",
-         "#define INC_CANCIONES_TABLA_H_",
-         ""]
-    for nombre, d in lista:
-        L.append(f'#include "{d["archivo"]}"')
-    L += ["", "/* Número de cada canción (para song_index en main.c) */"]
-    for i, (nombre, d) in enumerate(lista):
-        L.append(f"#define CANCION_{d['U']:<40} {i}")
-    L += [f"#define CANCIONES_TOTAL {len(lista)}", "",
-          "/* FILA(cancion, titulo, pistas_j1, n_j1, pistas_j2, n_j2, volumen_maestro) -> la define songs.c */",
-          "#define CANCIONES_FILAS \\"]
-    for nombre, d in lista:
-        U = d['U']
-        c1 = f"{d['canal1']}, SONG_{U}_CANAL1_N" if d['canal1'] else "0, 0"
-        c2 = f"{d['canal2']}, SONG_{U}_CANAL2_N" if d['canal2'] else "0, 0"
-        L.append(f'\tFILA(song_{nombre}, "{d["titulo"]}", {c1}, {c2}, {d["master"]}), \\')
-    L += ["", "#endif /* INC_CANCIONES_TABLA_H_ */", ""]
-    escribir(os.path.join(inc, TABLA), "\n".join(L))
-
-    print(f"{TABLA}: {len(lista)} canciones")
+def listar(bib):
+    lista = canciones(bib)
+    print(f"Biblioteca {bib}: {len(lista)} canciones")
     for i, (nombre, d) in enumerate(lista):
         avisos = []
         if not d['canal1']:
             avisos.append("sin canal 1: el jugador 1 no tiene notas")
         if not d['canal2']:
             avisos.append("sin canal 2: el jugador 2 no tiene notas")
-        print(f"  {i}  CANCION_{d['U']:<32} \"{d['titulo']}\"" + (f"   ({'; '.join(avisos)})" if avisos else ""))
+        print(f"  {i:2}  {nombre:<36} \"{d['titulo']}\"" + (f"   ({'; '.join(avisos)})" if avisos else ""))
+    if len(lista) > MAX_CANCIONES:
+        print(f"  ! El menú muestra máximo {MAX_CANCIONES} (CANCIONES_SD_MAX)")
     return lista
 
 
@@ -148,9 +122,9 @@ DUR = {'WHOLE': PPQ * 4, 'HALF': PPQ * 2, 'QUARTER': PPQ, 'EIGHTH': PPQ // 2, 'S
        'THIRTYSECOND': PPQ // 8}
 
 
-def _notas_h(inc):
+def _notas_h():
     m = {'REST': 0}
-    for nombre, val in re.findall(r'#define\s+([A-G][SB]?\d)\s+(\d+)', leer(os.path.join(inc, 'notes.h'))):
+    for nombre, val in re.findall(r'#define\s+([A-G][SB]?\d)\s+(\d+)', leer(NOTAS_H)):
         m[nombre] = int(val)
     return m
 
@@ -168,7 +142,7 @@ def leer_cancion(inc, nombre, d):
     txt = leer(os.path.join(inc, d['archivo']))
     for fn in sorted(glob.glob(os.path.join(inc, f'song_{nombre}_canal*.h'))):
         txt += "\n" + leer(fn)
-    notas_h = _notas_h(inc)
+    notas_h = _notas_h()
     arreglos = {}
     for arr, cuerpo in re.findall(r'static\s+const\s+Note\s+(\w+)\s*\[\]\s*=\s*\{(.*?)\};', txt, re.S):
         lista = []
@@ -213,34 +187,41 @@ def escribir_ghs(path, titulo, bpm, pistas, p1, p2, master=0):
     return len(h), sum(len(p[2]) for p in pistas)
 
 
-def exportar_sd(inc, destino):
+def exportar_sd(bib, destino, solo=None):
+    """Escribe las canciones de la biblioteca (o solo la llamada 'solo') en DESTINO/CANCIONES/<nombre>.ghs."""
     carpeta = os.path.join(destino, 'CANCIONES')
     os.makedirs(carpeta, exist_ok=True)
-    total = 0
-    for nombre, d in canciones(inc):
-        c = leer_cancion(inc, nombre, d)
+    hechas, avisos = [], []
+    for nombre, d in canciones(bib):
+        if solo and nombre != solo:
+            continue
+        c = leer_cancion(bib, nombre, d)
         path = os.path.join(carpeta, f'{nombre}.ghs')
         bytes_, notas = escribir_ghs(path, d['titulo'], c['bpm'], c['pistas'], c['p1'], c['p2'], d['master'])
-        total += 1
-        aviso = "  (más de 10000 notas: no cabe en la RAM, ver CANCIONES_SD_MAX_NOTAS)" if notas > 10000 else ""
+        hechas.append((nombre, d['titulo'], notas, bytes_))
+        aviso = ""
+        if notas > MAX_NOTAS:
+            aviso = f"  ! {notas} notas: no cabe en la RAM (máx. {MAX_NOTAS}), el STM la va a rechazar"
+            avisos.append(f"{d['titulo']}: {notas} notas (máx. {MAX_NOTAS})")
         print(f"  {path}  {notas} notas, {bytes_} bytes{aviso}")
-    print(f"{total} canciones en {carpeta}")
+    print(f"{len(hechas)} canciones en {carpeta}")
+    return hechas, avisos
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Indexa las canciones de MusicaGame (genera canciones_tabla.h)")
-    ap.add_argument('--inc', default=INC_POR_DEFECTO, help='carpeta Core/Inc del proyecto MusicaGame')
+    ap = argparse.ArgumentParser(description="Biblioteca de canciones de MusicaGame -> microSD (.ghs)")
+    ap.add_argument('--biblioteca', default=BIBLIOTECA, help='carpeta con los song_*.h (MusicaGame/canciones)')
     ap.add_argument('--renombrar', nargs=2, metavar=('VIEJO', 'NUEVO'))
     ap.add_argument('--quitar', metavar='NOMBRE')
     ap.add_argument('--sd', metavar='DESTINO', help='escribe las canciones en DESTINO/CANCIONES/*.ghs (la microSD)')
     a = ap.parse_args()
     if a.renombrar:
-        renombrar(a.inc, *a.renombrar)
+        renombrar(a.biblioteca, *a.renombrar)
     if a.quitar:
-        quitar(a.inc, a.quitar)
-    registrar(a.inc)
+        quitar(a.biblioteca, a.quitar)
+    listar(a.biblioteca)
     if a.sd:
-        exportar_sd(a.inc, a.sd)
+        exportar_sd(a.biblioteca, a.sd)
 
 
 if __name__ == '__main__':

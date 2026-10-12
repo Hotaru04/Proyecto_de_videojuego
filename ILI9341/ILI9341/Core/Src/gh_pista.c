@@ -56,6 +56,7 @@ static uint8_t  activa = 1;           /* 0 = hay un menú en pantalla (la pista 
 static uint8_t  pausa = 0;            /* 1 = la pista está congelada */
 static uint32_t pausa_t;              /* cuándo empezó la pausa */
 static uint8_t  pausa_jugador = 0;
+static uint8_t  cuenta = 0;           /* número de la cuenta atrás en pantalla (0 = no hay) */
 static uint32_t puntos = 0;
 static uint8_t  ultima_cal = 0xFF;    /* 0xFF = todavía nada */
 
@@ -146,6 +147,48 @@ static void Pausa_Dibujar(uint8_t mostrar) {
 	}
 }
 
+/* ---------- Cuenta atrás (3, 2, 1 grandes al centro de la pista) ----------
+ * Al empezar la cuenta la pista se reinicia (scroll en 0) y se queda quieta, así que la memoria es igual a la
+ * pantalla y se dibuja directo. Las letras son las de 16x16 (bigFont) agrandadas CUENTA_ESCALA veces. */
+#define CUENTA_ESCALA  6
+#define CUENTA_LADO    (16 * CUENTA_ESCALA)                    /* 96 px */
+#define CUENTA_X       ((GH_PANTALLA_W - CUENTA_LADO) / 2)
+#define CUENTA_Y       (HUD + (VSA - CUENTA_LADO) / 2)
+#define C_AMARILLO     0xFFE0
+extern const uint16_t bigFont[];
+
+static void Cuenta_Dibujar(uint8_t n) {
+	FillRectFast(CUENTA_X, CUENTA_Y, CUENTA_LADO, CUENTA_LADO, GH_COLOR_FONDO);
+	if (!n || n > 9) return;
+	const uint16_t *g = bigFont + ((('0' + n) - 32) * 16);
+	for (int f = 0; f < 16; f++) {
+		uint16_t bits = g[f];
+		for (int col = 0; col < 16; ) {                          /* tramos seguidos de pixeles encendidos */
+			if (!(bits & (0x8000u >> col))) { col++; continue; }
+			int ini = col;
+			while (col < 16 && (bits & (0x8000u >> col))) col++;
+			FillRectFast(CUENTA_X + ini * CUENTA_ESCALA, CUENTA_Y + f * CUENTA_ESCALA,
+			             (col - ini) * CUENTA_ESCALA, CUENTA_ESCALA, C_AMARILLO);
+		}
+	}
+}
+
+static void Hud_Dibujar(void);
+
+static void Cuenta_Paquete(uint8_t n, uint32_t t_rx_ms) {
+	if (n) {
+		if (!cuenta) GH_Pista_Iniciar();              /* pista limpia y quieta, scroll en 0 */
+		cuenta = n;
+		Cuenta_Dibujar(n);
+		Hud_Dibujar();
+	} else if (cuenta) {
+		Cuenta_Dibujar(0);                            /* borra el número */
+		cuenta = 0;
+		t0 = t_rx_ms;                                 /* la pista arranca desde aquí (S sigue en 0) */
+		Hud_Dibujar();
+	}
+}
+
 /* ---------- Scroll ---------- */
 static void Avanzar(uint32_t ahora) {
 	int32_t nuevo = Px(ahora);
@@ -176,6 +219,8 @@ static void Hud_Dibujar(void) {
 	if (pausa) {
 		snprintf(txt, sizeof(txt), "PAUSA J%u", pausa_jugador);
 		msg = txt; col = C_ROJO;
+	} else if (cuenta) {
+		msg = "PREPARATE"; col = C_AMARILLO;
 	} else {
 		switch (ultima_cal) {
 			case GH_CAL_PERFECTO: msg = "PERFECTO +100"; col = C_VERDE;   break;
@@ -197,7 +242,7 @@ void GH_Pista_Iniciar(void) {
 	S = 0;
 	for (uint8_t c = 0; c < GH_NUM_CARRILES; c++) { car[c].ini = 0; car[c].cant = 0; car[c].boton = GH_BTN_REPOSO; }
 	btn_presionados = 0; btn_sosteniendo = 0;
-	pausa = 0; puntos = 0; ultima_cal = 0xFF; activa = 1;
+	pausa = 0; cuenta = 0; puntos = 0; ultima_cal = 0xFF; activa = 1;
 	LCD_ScrollArea(HUD, VSA, BFA);
 	LCD_ScrollStart(HUD);
 	FillRectFast(0, HUD, GH_PANTALLA_W, GH_PANTALLA_H - HUD, GH_COLOR_FONDO);   /* pista y fila de botones */
@@ -255,7 +300,11 @@ void GH_Pista_Paquete(const uint8_t *b, uint32_t t_rx_ms) {
 			/* fall through */
 		case GH_PKT_ALTO:
 			if (pausa) { pausa = 0; t0 += t_rx_ms - pausa_t; }
+			if (cuenta) Cuenta_Paquete(0, t_rx_ms);
 			if (activa) GH_Pista_Limpiar();
+			break;
+		case GH_PKT_CUENTA:
+			if (activa) Cuenta_Paquete(b[2], t_rx_ms);
 			break;
 		case GH_PKT_PUNTOS:
 			if (!activa) break;
@@ -295,6 +344,7 @@ void GH_Pista_Paquete(const uint8_t *b, uint32_t t_rx_ms) {
 void GH_Pista_Desactivar(void) {
 	activa = 0;
 	pausa = 0;
+	cuenta = 0;
 	LCD_ScrollStart(HUD);                         /* memoria = pantalla: los menús dibujan directo */
 }
 
@@ -302,7 +352,7 @@ uint8_t GH_Pista_Activa(void) { return activa; }
 
 void GH_Pista_Actualizar(void) {
 	if (!activa) return;
-	if (!pausa) Avanzar(HAL_GetTick());
+	if (!pausa && !cuenta) Avanzar(HAL_GetTick());
 
 	for (uint8_t c = 0; c < GH_NUM_CARRILES; c++) {
 		Carril *k = &car[c];

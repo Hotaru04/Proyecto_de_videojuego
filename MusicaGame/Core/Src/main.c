@@ -26,7 +26,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "audio.h"      /* motor de audio: TIM6 -> DAC1 (PA4) <- DMA1 Stream5 */
-#include "songs.h"      /* tabla de canciones (los .h de canciones se incluyen en songs.c) */
+#include "songs.h"      /* SongEntry (las canciones vienen de la microSD) */
 #include "enlace_spi.h" /* SPI2 hacia las pantallas (una por jugador) */
 #include "beats.h"      /* notas del juego que se mandan a las pantallas */
 #include "controles.h"  /* botones de la ESP32 por USART1 (PA10) */
@@ -55,8 +55,7 @@
 
 /* USER CODE BEGIN PV */
 /* ===== Canción inicial =====
- * Número en la tabla de canciones: ver CANCION_<NOMBRE> en Core/Inc/canciones_tabla.h
- * (ese archivo lo genera tools/registrar_canciones.py; hoy: 0 animals, 1 power rangers, 2 night begins to shine).
+ * Número de la canción en la microSD (en orden alfabético de archivo, como salen en el menú).
  * Con JUEGO_INICIAR_EN_MENU = 1 (juego.h) es solo la que aparece marcada en el menú. */
 volatile uint8_t song_index = 0;
 

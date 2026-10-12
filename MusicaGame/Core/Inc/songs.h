@@ -1,10 +1,7 @@
 /*
  * songs.h
- * Tabla de canciones. El índice de la tabla elige qué canción suena.
- *
- * Para agregar una canción: en tools/midi_to_c_gui.py, botón "Agregar al juego"
- * (o copia sus .h a Core/Inc y corre  python tools/registrar_canciones.py).
- * Eso regenera canciones_tabla.h: los números quedan como CANCION_<NOMBRE>.
+ * SongEntry: una canción lista para tocar (la arma canciones_sd.c al cargarla de la microSD).
+ * Las canciones ya NO están en la flash: ver Core/Inc/canciones_sd.h y tools/registrar_canciones.py.
  */
 #ifndef INC_SONGS_H_
 #define INC_SONGS_H_
@@ -22,7 +19,5 @@ typedef struct {
 	const char    *titulo;      /* nombre que se muestra en el menú */
 } SongEntry;
 
-extern const SongEntry song_table[];
-extern const uint8_t   SONG_COUNT;
 
 #endif /* INC_SONGS_H_ */

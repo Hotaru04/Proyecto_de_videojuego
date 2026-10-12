@@ -4,6 +4,7 @@
  *
  * En la tarjeta (FAT32):   /CANCIONES/animals.ghs, /CANCIONES/the_night_begins_to_shine.ghs, ...
  * (si no existe la carpeta CANCIONES, se buscan en la raíz). El menú las ordena por nombre de archivo.
+ * Es la ÚNICA fuente de canciones: en la flash no hay ninguna.
  *
  * Al elegir una canción se copia COMPLETA de la SD a la RAM (las notas ocupan 6 bytes cada una) y se
  * toca desde ahí: durante el juego no se lee la tarjeta.
@@ -25,11 +26,12 @@
 #include <stdint.h>
 #include "songs.h"
 
-#define CANCIONES_SD_MAX        8        /* canciones en el menú */
-#define CANCIONES_SD_MAX_NOTAS  10000    /* notas de la canción cargada (60 KB de RAM) */
+#define CANCIONES_SD_MAX        32       /* canciones en el menú */
+#define CANCIONES_SD_MAX_NOTAS  14000    /* notas de la canción cargada (84 KB de RAM); igual a MAX_NOTAS del .py */
 
 uint8_t          CancionesSD_Iniciar(void);              /* monta la tarjeta y lista las canciones; devuelve cuántas */
 uint8_t          CancionesSD_Total(void);
+uint8_t          CancionesSD_Montada(void);              /* 1 = la tarjeta se leyó (aunque no tenga canciones) */
 const char      *CancionesSD_Titulo(uint8_t i);
 const SongEntry *CancionesSD_Cargar(uint8_t i);          /* la copia a RAM; 0 si falló (ver la bitácora) */
 

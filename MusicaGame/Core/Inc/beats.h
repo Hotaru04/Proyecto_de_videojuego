@@ -7,6 +7,7 @@
  * Uso (main.c):
  *   Enlace_Init();                    una vez
  *   Beats_Iniciar(cur, indice);       cada vez que arranca una canción
+ *   Beats_Previa(ms);                 mientras el audio todavía no arranca (entrada de la canción)
  *   Beats_Actualizar();               en el while(1), lo más seguido posible
  */
 #ifndef INC_BEATS_H_
@@ -26,6 +27,7 @@
 void Beats_Iniciar(const SongEntry *e, uint8_t indice);   /* e = 0 -> nada que mandar */
 void Beats_Detener(void);                                 /* manda GH_PKT_ALTO */
 void Beats_Actualizar(void);
+void Beats_Previa(uint32_t faltan_ms);                   /* antes del audio: la canción empieza dentro de faltan_ms */
 
 /* Diagnóstico (Live Expressions) */
 extern volatile uint32_t beats_enviadas[2];   /* notas mandadas por jugador */

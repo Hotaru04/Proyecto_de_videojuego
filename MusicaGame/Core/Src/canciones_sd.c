@@ -64,6 +64,7 @@ static void Buscar_En(const char *carpeta) {
 
 uint8_t CancionesSD_Iniciar(void) {
 	total = 0;
+	f_mount(0, "", 0);                       /* por si es un reintento: suelta la tarjeta anterior */
 	FRESULT r = f_mount(&fs, "", 1);
 	montada = (r == FR_OK);
 	if (!montada) { Registro("SD: no se pudo leer la tarjeta (error %u). Revisa conexion y formato FAT32.", r); return 0; }
@@ -79,6 +80,7 @@ uint8_t CancionesSD_Iniciar(void) {
 }
 
 uint8_t CancionesSD_Total(void) { return total; }
+uint8_t CancionesSD_Montada(void) { return montada; }
 const char *CancionesSD_Titulo(uint8_t i) { return i < total ? lista[i].titulo : ""; }
 
 const SongEntry *CancionesSD_Cargar(uint8_t i) {

@@ -22,7 +22,7 @@ Opciones:
     --name cancion      nombre C de la canción (por defecto, el del archivo)
     --grid 12           cuantiza a 12 ticks (semicorchea con PPQ=48). Por defecto 1 (sin cuantizar)
     --bpm 120           forzar BPM (si no, se toma el primer cambio de tempo del MIDI)
-    --juego             escribir los .h en ../Core/Inc de MusicaGame y registrarla en canciones_tabla.h
+    --juego             guardarla en la biblioteca ../canciones (luego: registrar_canciones.py --sd E:\\ la pasa a la microSD)
                         (canal 1 = notas del jugador 1, canal 2 = jugador 2). Usa un --name corto.
 
 Formato generado: {nota, duración_en_ticks, velocidad[, NOTE_CHORD]}
@@ -201,7 +201,7 @@ def main():
     ap.add_argument('--split', action='store_true',
                     help='un .h por canal (song_x_canalN.h) + song_x.h que los junta')
     ap.add_argument('--juego', action='store_true',
-                    help='escribir en ../Core/Inc de MusicaGame y registrar la canción (canciones_tabla.h)')
+                    help='guardar en la biblioteca MusicaGame/canciones (luego registrar_canciones.py --sd la pasa a la microSD)')
     args = ap.parse_args()
 
     mid, tracks, names, programs, tempos = load_midi(args.midi)
@@ -253,7 +253,9 @@ def main():
     song = c_ident(args.name or os.path.splitext(os.path.basename(args.midi))[0])
     out = args.output or f"song_{song}.h"
     if args.juego:
-        out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'Core', 'Inc', f"song_{song}.h")
+        bib = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'canciones')
+        os.makedirs(bib, exist_ok=True)
+        out = os.path.join(bib, f"song_{song}.h")
     files, stats = generate_files(os.path.basename(args.midi), tpb, salidas, song, bpm, args.grid,
                                   args.split, os.path.basename(out))
     outdir = os.path.dirname(os.path.abspath(out))
@@ -270,7 +272,8 @@ def main():
     if args.juego:
         sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
         import registrar_canciones
-        registrar_canciones.registrar(outdir)
+        registrar_canciones.listar(outdir)
+        print("Para pasarlas a la microSD:  python registrar_canciones.py --sd E:\\")
 
 
 def seq_to_c(seq, drums):

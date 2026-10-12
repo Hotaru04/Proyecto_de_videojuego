@@ -2,10 +2,13 @@
  * juego.h
  * Flujo del juego (MusicaGame es quien manda):
  *
- *   MENÚ DE CANCIONES --A / Start--> JUGANDO --termina la canción--> RESULTADOS --A / 4 s--> MENÚ FINAL
- *          ^                                                                                   |
- *          +---------------------------- "SELECCIONAR CANCION" ---------------------------------+
- *                                         "REVANCHA" -> vuelve a JUGANDO la misma canción
+ *   MENÚ DE CANCIONES --A / Start--> CUENTA 3-2-1 --> ENTRADA --> JUGANDO --termina--> RESULTADOS --A / 4 s--> MENÚ FINAL
+ *          ^                                                                                                    |
+ *          +-------------------------------------- "SELECCIONAR CANCION" -----------------------------------------+
+ *                                       "REVANCHA" -> vuelve a la CUENTA con la misma canción
+ *
+ * CUENTA:  3, 2, 1 grandes en las pantallas, la pista quieta.
+ * ENTRADA: las primeras notas ya caen pero el audio todavía no suena (así la primera nota no sale de golpe).
  *
  * En los menús cualquiera de los dos jugadores mueve el cursor (flechas arriba / abajo del control)
  * y elige con A (verde) o Start. Las dos pantallas muestran lo mismo.
@@ -15,9 +18,14 @@
 #define INC_JUEGO_H_
 
 #include <stdint.h>
+#include "gh_protocolo.h"
 
 #define JUEGO_INICIAR_EN_MENU   1      /* 0 = al encender arranca directo song_index (para probar rápido) */
-#define JUEGO_USAR_SD           1      /* 1 = canciones de la microSD (si no hay tarjeta, usa las de la flash) */
+#define JUEGO_BUSCAR_SD_MS      3000   /* sin canciones: cada cuánto se vuelve a leer la microSD */
+#define JUEGO_CUENTA_DESDE      3      /* 3, 2, 1 */
+#define JUEGO_CUENTA_PASO_MS    1000   /* cuánto dura cada número */
+#define JUEGO_ENTRADA_MS        GH_ANTICIPACION_MS   /* notas cayendo antes del audio (lo que tarda una nota en bajar) */
+#define JUEGO_REENVIO_MS        1000   /* en los menús se vuelve a mandar la pantalla (por si una pantalla arrancó tarde) */
 #define JUEGO_ESPERA_FIN_MS     1500   /* después de la última nota, antes de mostrar resultados */
 #define JUEGO_RESULTADOS_MS     4000   /* resultados en pantalla antes del menú (o antes, con A) */
 
