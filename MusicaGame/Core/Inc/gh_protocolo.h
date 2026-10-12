@@ -66,6 +66,7 @@
 #define GH_PANT_CANCIONES   1     /* lista de canciones (textos con GH_PKT_TEXTO) */
 #define GH_PANT_RESULTADOS  2     /* ganador y puntos (GH_PKT_RESULTADO antes) */
 #define GH_PANT_FIN         3     /* "SELECCIONAR CANCION" / "REVANCHA" */
+#define GH_PANT_INICIO      4
 #define GH_MENU_FILAS       6     /* canciones visibles a la vez */
 
 /* Un pedazo de texto (títulos de canciones).  [2] fila visible 0..GH_MENU_FILAS-1   [3] posición   [4..6] 3 letras (0 = fin)
