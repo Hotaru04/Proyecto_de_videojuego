@@ -53,9 +53,13 @@
  *   [2..5] puntos (uint32, byte bajo primero)   [6] GH_CAL_* del último golpe */
 #define GH_PKT_PUNTOS   0x06
 
-/* Pausa.  [2] 1 = pausado, 0 = sigue   [3] jugador que la puso (1 o 2)
- * En pausa la pista se congela; al quitarla sigue exactamente donde estaba. */
+/* Pausa.  [2] 1 = pausado, 0 = sigue   [3] jugador que la puso (1 o 2)   [4] opción marcada (GH_PAUSA_*)
+ * En pausa la pista se congela; al quitarla sigue exactamente donde estaba.
+ * Mientras está en pausa, MusicaGame vuelve a mandar el paquete cuando el jugador mueve el cursor. */
 #define GH_PKT_PAUSA    0x07
+#define GH_PAUSA_CONTINUAR  0
+#define GH_PAUSA_SALIR      1     /* termina la partida: resultados (quién ganó) y luego REVANCHA / SALIR */
+#define GH_PAUSA_OPCIONES   2
 
 /* Cambia lo que muestra la pantalla (la pista se detiene mientras hay un menú).
  *   [2] GH_PANT_*   [3] opción marcada   [4] cuántas opciones
@@ -65,7 +69,7 @@
 #define GH_PKT_PANTALLA 0x08
 #define GH_PANT_CANCIONES   1     /* lista de canciones (textos con GH_PKT_TEXTO) */
 #define GH_PANT_RESULTADOS  2     /* ganador y puntos (GH_PKT_RESULTADO antes) */
-#define GH_PANT_FIN         3     /* "SELECCIONAR CANCION" / "REVANCHA" */
+#define GH_PANT_FIN         3     /* "REVANCHA" / "SALIR" */
 #define GH_PANT_INICIO      4     /* NUEVO: Pantalla de título inicial */
 #define GH_MENU_FILAS       6     /* canciones visibles a la vez */
 
@@ -94,6 +98,7 @@
 #define GH_CAL_JUSTO      1   /*  10 puntos */
 #define GH_CAL_MEDIO      2   /*  50 puntos */
 #define GH_CAL_PERFECTO   3   /* 100 puntos */
+#define GH_CAL_SOSTENIDA  4   /* puntos por ir sosteniendo una nota larga */
 
 /* Leer / armar el byte (id, carril) */
 #define GH_ID_CARRIL(id, c)   ((uint8_t)((((id) & 0x3F) << 2) | ((c) & 0x03)))

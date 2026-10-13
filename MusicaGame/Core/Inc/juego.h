@@ -2,10 +2,12 @@
  * juego.h
  * Flujo del juego (MusicaGame es quien manda):
  *
- *   MENÚ DE CANCIONES --A / Start--> CUENTA 3-2-1 --> ENTRADA --> JUGANDO --termina--> RESULTADOS --A / 4 s--> MENÚ FINAL
- *          ^                                                                                                    |
- *          +-------------------------------------- "SELECCIONAR CANCION" -----------------------------------------+
- *                                       "REVANCHA" -> vuelve a la CUENTA con la misma canción
+ *   INICIO --Start--> MENÚ DE CANCIONES --A--> CUENTA 3-2-1 --> ENTRADA --> JUGANDO --termina--> RESULTADOS
+ *     ^                                                              |                                 |
+ *     |                                                     pausa: SALIR AL MENU ----------------------+
+ *     |                                                                                                v
+ *     +--------------------------------- "SALIR" ------------------------------------------- MENÚ FINAL
+ *                                        "REVANCHA" -> vuelve a la CUENTA con la misma canción
  *
  * CUENTA:  3, 2, 1 grandes en las pantallas, la pista quieta.
  * ENTRADA: las primeras notas ya caen pero el audio todavía no suena (así la primera nota no sale de golpe).

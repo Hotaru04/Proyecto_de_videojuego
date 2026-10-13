@@ -247,45 +247,7 @@ static void Marco(void) {                                     /* borde neón com
 
 
 ///* Una opción: caja de 224 x 30; la marcada va rellena y con flecha */
-//static void Opcion(int i, int y0, const char *txt_largo, uint8_t marcada) {
-//	int y = y0 + i * PASO;
-//	char txt[MAX_LETRAS + 1];
-//	strncpy(txt, txt_largo, MAX_LETRAS); txt[MAX_LETRAS] = 0;
-//	uint16_t fondo = marcada ? C_CIAN : C_MORADO;
-//	uint16_t letra = marcada ? C_FONDO : C_BLANCO;
-//	FillRectFast(8, y, ANCHO - 16, 30, fondo);
-//	if (!marcada) {                                           /* contorno magenta en las no marcadas */
-//		FillRectFast(8, y, ANCHO - 16, 1, C_MAGENTA);
-//		FillRectFast(8, y + 29, ANCHO - 16, 1, C_MAGENTA);
-//	}
-//	Texto(txt, y + 9, 0, letra, fondo);
-//	if (marcada && strlen(txt) <= 24) LCD_Print(">", 14, y + 9, 1, C_FONDO, fondo);   /* flecha si cabe */
-//}
-////////////////////////////////////////////////////////////
-static void Opcion(int i, int y0, const char *txt_largo, uint8_t marcada) {
-    int y = y0 + i * PASO;
-    char txt[MAX_LETRAS + 1];
-
-    strncpy(txt, txt_largo, MAX_LETRAS);
-    txt[MAX_LETRAS] = 0;
-
-    uint16_t fondo = marcada ? C_CIAN : C_MORADO;
-    uint16_t letra = marcada ? C_FONDO : C_BLANCO;
-
-    FillRectFast(LISTA_X, y, LISTA_W, 24, fondo);
-
-    if (!marcada) {
-        FillRectFast(LISTA_X, y, LISTA_W, 1, C_MAGENTA);
-        FillRectFast(LISTA_X, y + 23, LISTA_W, 1, C_MAGENTA);
-    }
-
-    if (marcada) {
-        LCD_Print(">", LISTA_X + 4, y + 8, 1, C_FONDO, fondo);
-    }
-
-    TextoCaja(txt, LISTA_X + 12, y + 8, LISTA_W - 16, 0, letra, fondo);
-}
-
+//
 
 ////////////////////////////////////////////////////////////
 
@@ -706,14 +668,29 @@ static void Dibujar_Resultados(uint8_t ganador, uint8_t yo) {
 	Texto("A: CONTINUAR", 292, 0, C_AMARILLO, C_FONDO);
 }
 
+/* Opción del menú final: caja de todo el ancho (224 x 30), texto centrado; la marcada va rellena y con flecha.
+ * (antes usaba la Opcion() angosta de la lista con preview y los textos se cortaban). */
+static void Opcion_Fin(int i, int y0, const char *txt, uint8_t marcada) {
+	int y = y0 + i * 40;
+	uint16_t fondo = marcada ? C_CIAN : C_MORADO;
+	uint16_t letra = marcada ? C_FONDO : C_BLANCO;
+	FillRectFast(8, y, ANCHO - 16, 30, fondo);
+	if (!marcada) {                                           /* contorno magenta en las no marcadas */
+		FillRectFast(8, y, ANCHO - 16, 1, C_MAGENTA);
+		FillRectFast(8, y + 29, ANCHO - 16, 1, C_MAGENTA);
+	}
+	Texto(txt, y + 9, 0, letra, fondo);
+	if (marcada) LCD_Print(">", 16, y + 9, 1, C_FONDO, fondo);
+}
+
 static void Dibujar_Fin(uint8_t marcada, uint8_t completa) {
 	if (completa) {
 		Marco();
 		Texto("Y AHORA?", 40, 1, C_MAGENTA, C_FONDO);
 		Texto("FLECHAS: MOVER   A: ELEGIR", 292, 0, C_AMARILLO, C_FONDO);
 	}
-	Opcion(0, 120, "SELECCIONAR CANCION", marcada == 0);
-	Opcion(1, 120, "REVANCHA", marcada == 1);
+	Opcion_Fin(0, 120, "REVANCHA", marcada == 0);
+	Opcion_Fin(1, 120, "SALIR", marcada == 1);
 }
 
 uint8_t GH_Menu_Paquete(const uint8_t *b) {

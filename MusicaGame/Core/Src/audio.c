@@ -72,6 +72,13 @@ void Audio_SetMasterVolume(uint16_t vol) { master_volume = vol; }
 /* En pausa no se avanza la canción ni las voces: al quitarla sigue exactamente donde estaba */
 void Audio_Pausa(uint8_t si) { pausa = si; }
 
+void Audio_Detener(void) {
+	HAL_NVIC_DisableIRQ(DMA1_Stream5_IRQn);
+	Music_Stop();
+	HAL_NVIC_EnableIRQ(DMA1_Stream5_IRQn);
+	pausa = 0;
+}
+
 /* ---------------------------------------------------------------------------------------------
  * Mezcla -> DAC de 12 bits
  *   Cada voz aporta como máximo ±32767 (Q15) ya multiplicada por envolvente y volúmenes.

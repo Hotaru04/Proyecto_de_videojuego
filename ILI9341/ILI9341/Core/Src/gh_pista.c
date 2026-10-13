@@ -56,9 +56,11 @@ static uint8_t  activa = 1;           /* 0 = hay un menú en pantalla (la pista 
 static uint8_t  pausa = 0;            /* 1 = la pista está congelada */
 static uint32_t pausa_t;              /* cuándo empezó la pausa */
 static uint8_t  pausa_jugador = 0;
+static uint8_t  pausa_opc = 0;        /* opción marcada en el menú de pausa */
 static uint8_t  cuenta = 0;           /* número de la cuenta atrás en pantalla (0 = no hay) */
 static uint32_t puntos = 0;
 static uint8_t  ultima_cal = 0xFF;    /* 0xFF = todavía nada */
+static uint32_t ultimo_mas = 0;       /* cuánto sumó el último golpe (los puntos se escalan en MusicaGame) */
 
 volatile uint32_t pista_aciertos = 0, pista_fallos = 0, pista_descartadas = 0;
 
@@ -123,26 +125,83 @@ static void Pintar(uint8_t c, int32_t wa, int32_t wb) {
 
 static void Pintar_Nota(uint8_t c, const Nota *n) { Pintar(c, n->p - ALTO + 1, n->p + n->largo); }
 
-/* ---------- Sprite de pausa (al centro de la pista) ----------
+/* ---------- Sprite y menú de pausa (al centro de la pista) ----------
  * La pista está en memoria "enrollada" por el scroll: la fila de pantalla y está en la fila de memoria
- * HUD + (VSA - w) mod VSA, con w = S + 262 - y. Se dibuja por tramos de filas seguidas en memoria. */
-#define PAUSA_X  ((GH_PANTALLA_W - GH_PAUSA_W) / 2)
-#define PAUSA_Y  (HUD + (VSA - GH_PAUSA_H) / 2)
+ * HUD + (VSA - w) mod VSA, con w = S + 262 - y. Todo se dibuja por tramos de filas seguidas en memoria.
+ * Debajo del sprite van las 3 opciones (CONTINUAR / REINICIAR / MENU PRINCIPAL). */
+#define PAUSA_X     ((GH_PANTALLA_W - GH_PAUSA_W) / 2)
+#define PAUSA_Y     (HUD + 4)
+#define OPC_Y       (PAUSA_Y + GH_PAUSA_H + 6)       /* primera opción */
+#define OPC_ALTO    22
+#define OPC_PASO    26
+#define PAUSA_FIN   (OPC_Y + GH_PAUSA_OPCIONES * OPC_PASO)   /* fila de pantalla donde termina todo */
+#define C_FONDO_OPC 0x300C
+#define C_CIAN_OPC  0x07FF
+#define C_MAGENTA_OPC 0xF81F
+extern const uint8_t smallFont[];
+
+static const char *const OPCIONES[GH_PAUSA_OPCIONES] = { "CONTINUAR", "SALIR AL MENU" };
 
 static int32_t Mem_De_Fila(int32_t y) { return HUD + Mod(VSA - (S + GH_BOTON_Y - y), VSA); }
 
-static void Pausa_Dibujar(uint8_t mostrar) {
-	int32_t y = PAUSA_Y, fin = PAUSA_Y + GH_PAUSA_H;
-	while (y < fin) {
+/* Rectángulo en coordenadas de pantalla dentro de la pista */
+static void Rect_Pista(int x, int32_t y, int w, int32_t h, uint16_t color) {
+	while (h > 0) {
 		int32_t mem = Mem_De_Fila(y);
-		int32_t n = fin - y;
-		if (n > HUD + VSA - mem) n = HUD + VSA - mem;           /* hasta donde la memoria da la vuelta */
-		if (mostrar) LCD_BitmapFast(PAUSA_X, mem, GH_PAUSA_W, n, gh_pausa + (y - PAUSA_Y) * GH_PAUSA_W * 2);
-		else         FillRectFast(PAUSA_X, mem, GH_PAUSA_W, n, GH_COLOR_FONDO);
-		y += n;
+		int32_t n = h;
+		if (n > HUD + VSA - mem) n = HUD + VSA - mem;
+		FillRectFast(x, mem, w, n, color);
+		y += n; h -= n;
 	}
-	if (!mostrar) {                                              /* volver a pintar las notas que tapaba */
-		int32_t wa = S + GH_BOTON_Y - (PAUSA_Y + GH_PAUSA_H - 1), wb = S + GH_BOTON_Y - PAUSA_Y;
+}
+
+/* Texto chico (8x12) en la pista, fila por fila (puede caer donde la memoria da la vuelta) */
+static void Texto_Pista(const char *t, int x, int32_t y, uint16_t color) {
+	for (int f = 0; f < 12; f++) {
+		int32_t mem = Mem_De_Fila(y + f);
+		for (int i = 0; t[i]; i++) {
+			uint8_t bits = smallFont[(t[i] - 32) * 12 + f];
+			for (int col = 0; col < 8; ) {
+				if (!(bits & (0x80u >> col))) { col++; continue; }
+				int ini = col;
+				while (col < 8 && (bits & (0x80u >> col))) col++;
+				FillRectFast(x + i * 8 + ini, mem, col - ini, 1, color);
+			}
+		}
+	}
+}
+
+static void Opcion_Pausa(uint8_t i, uint8_t marcada) {
+	int32_t y = OPC_Y + i * OPC_PASO;
+	uint16_t fondo = marcada ? C_CIAN_OPC : C_FONDO_OPC;
+	Rect_Pista(PAUSA_X, y, GH_PAUSA_W, OPC_ALTO, fondo);
+	if (!marcada) {                                              /* contorno magenta en las no marcadas */
+		Rect_Pista(PAUSA_X, y, GH_PAUSA_W, 1, C_MAGENTA_OPC);
+		Rect_Pista(PAUSA_X, y + OPC_ALTO - 1, GH_PAUSA_W, 1, C_MAGENTA_OPC);
+	}
+	int len = 0; while (OPCIONES[i][len]) len++;
+	Texto_Pista(OPCIONES[i], (GH_PANTALLA_W - len * 8) / 2, y + 5, marcada ? GH_COLOR_FONDO : 0xFFFF);
+}
+
+static void Pausa_Opciones(void) {
+	for (uint8_t i = 0; i < GH_PAUSA_OPCIONES; i++) Opcion_Pausa(i, i == pausa_opc);
+}
+
+static void Pausa_Dibujar(uint8_t mostrar) {
+	if (mostrar) {
+		int32_t y = PAUSA_Y, fin = PAUSA_Y + GH_PAUSA_H;
+		while (y < fin) {
+			int32_t mem = Mem_De_Fila(y);
+			int32_t n = fin - y;
+			if (n > HUD + VSA - mem) n = HUD + VSA - mem;           /* hasta donde la memoria da la vuelta */
+			LCD_BitmapFast(PAUSA_X, mem, GH_PAUSA_W, n, gh_pausa + (y - PAUSA_Y) * GH_PAUSA_W * 2);
+			y += n;
+		}
+		Rect_Pista(PAUSA_X, PAUSA_Y + GH_PAUSA_H, GH_PAUSA_W, OPC_Y - PAUSA_Y - GH_PAUSA_H, GH_COLOR_FONDO);
+		Pausa_Opciones();
+	} else {                                                     /* borrar y volver a pintar las notas que tapaba */
+		Rect_Pista(PAUSA_X, PAUSA_Y, GH_PAUSA_W, PAUSA_FIN - PAUSA_Y, GH_COLOR_FONDO);
+		int32_t wa = S + GH_BOTON_Y - (PAUSA_FIN - 1), wb = S + GH_BOTON_Y - PAUSA_Y;
 		for (uint8_t c = 0; c < GH_NUM_CARRILES; c++) Pintar(c, wa, wb);
 	}
 }
@@ -210,7 +269,7 @@ static void Avanzar(uint32_t ahora) {
 #define C_ROJO     0xF800
 
 static void Hud_Dibujar(void) {
-	char txt[16];
+	char txt[16], cal[20];
 	FillRectFast(0, 0, GH_PANTALLA_W, HUD, GH_COLOR_FONDO);
 	snprintf(txt, sizeof(txt), "%lu", (unsigned long)puntos);
 	LCD_Print(txt, 4, 2, 2, C_BLANCO, GH_COLOR_FONDO);                 /* puntos: letra grande 16x16 */
@@ -222,13 +281,17 @@ static void Hud_Dibujar(void) {
 	} else if (cuenta) {
 		msg = "PREPARATE"; col = C_AMARILLO;
 	} else {
+		const char *nombre = 0;
 		switch (ultima_cal) {
-			case GH_CAL_PERFECTO: msg = "PERFECTO +100"; col = C_VERDE;   break;
-			case GH_CAL_MEDIO:    msg = "MEDIO +50";     col = C_CIAN;    break;
-			case GH_CAL_JUSTO:    msg = "JUSTO +10";     col = C_NARANJA; break;
-			case GH_CAL_FALLO:    msg = "FALLO";         col = C_ROJO;    break;
+			case GH_CAL_PERFECTO:  nombre = "PERFECTO";    col = C_VERDE;    break;
+			case GH_CAL_MEDIO:     nombre = "MEDIO";       col = C_CIAN;     break;
+			case GH_CAL_JUSTO:     nombre = "JUSTO";       col = C_NARANJA;  break;
+			case GH_CAL_FALLO:     nombre = "FALLO";       col = C_ROJO;     break;
+			case GH_CAL_SOSTENIDA: nombre = "SOSTENIENDO"; col = C_AMARILLO; break;
 			default: break;
 		}
+		if (nombre && ultimo_mas) { snprintf(cal, sizeof(cal), "%s +%lu", nombre, (unsigned long)ultimo_mas); msg = cal; }
+		else if (nombre)          msg = nombre;
 	}
 	if (msg) {                                                          /* calificación: letra chica 8x12, a la derecha */
 		int len = 0; while (msg[len]) len++;
@@ -242,7 +305,7 @@ void GH_Pista_Iniciar(void) {
 	S = 0;
 	for (uint8_t c = 0; c < GH_NUM_CARRILES; c++) { car[c].ini = 0; car[c].cant = 0; car[c].boton = GH_BTN_REPOSO; }
 	btn_presionados = 0; btn_sosteniendo = 0;
-	pausa = 0; cuenta = 0; puntos = 0; ultima_cal = 0xFF; activa = 1;
+	pausa = 0; cuenta = 0; puntos = 0; ultima_cal = 0xFF; ultimo_mas = 0; activa = 1;
 	LCD_ScrollArea(HUD, VSA, BFA);
 	LCD_ScrollStart(HUD);
 	FillRectFast(0, HUD, GH_PANTALLA_W, GH_PANTALLA_H - HUD, GH_COLOR_FONDO);   /* pista y fila de botones */
@@ -308,15 +371,24 @@ void GH_Pista_Paquete(const uint8_t *b, uint32_t t_rx_ms) {
 			break;
 		case GH_PKT_PUNTOS:
 			if (!activa) break;
-			puntos = (uint32_t)b[2] | ((uint32_t)b[3] << 8) | ((uint32_t)b[4] << 16) | ((uint32_t)b[5] << 24);
+		{
+			uint32_t nuevos = (uint32_t)b[2] | ((uint32_t)b[3] << 8) | ((uint32_t)b[4] << 16) | ((uint32_t)b[5] << 24);
+			ultimo_mas = (nuevos > puntos) ? nuevos - puntos : 0;
+			puntos = nuevos;
 			ultima_cal = b[6];
+		}
 			Hud_Dibujar();
 			break;
 		case GH_PKT_PAUSA:
 			if (!activa) break;
 			if (b[2] && !pausa) {
 				pausa = 1; pausa_t = t_rx_ms; pausa_jugador = b[3];
+				pausa_opc = (b[4] < GH_PAUSA_OPCIONES) ? b[4] : 0;
 				Pausa_Dibujar(1);
+			} else if (b[2] && pausa) {                   /* se movió el cursor del menú de pausa */
+				uint8_t nueva = (b[4] < GH_PAUSA_OPCIONES) ? b[4] : 0;
+				if (nueva != pausa_opc) { Opcion_Pausa(pausa_opc, 0); pausa_opc = nueva; Opcion_Pausa(pausa_opc, 1); }
+				break;
 			} else if (!b[2] && pausa) {
 				Pausa_Dibujar(0);                     /* antes de mover la pista: borra el sprite en su lugar */
 				pausa = 0;
