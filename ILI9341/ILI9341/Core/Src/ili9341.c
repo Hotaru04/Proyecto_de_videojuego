@@ -50,13 +50,11 @@ typedef struct {
 
 GPIO_Lookup busLookup[256];
 
-/* [GH] Escritura rápida de un byte al bus usando la tabla busLookup (3 escrituras a BSRR, sin leer ODR).
- * Antes cada byte se armaba bit por bit con lectura-modificación-escritura de 3 puertos. */
+/* Escribe un byte al bus con la tabla busLookup (3 escrituras a BSRR) */
 #define LCD_BUS(b)   do { const GPIO_Lookup *e_ = &busLookup[(uint8_t)(b)]; \
                           GPIOA->BSRR = e_->bsrrA; GPIOB->BSRR = e_->bsrrB; GPIOC->BSRR = e_->bsrrC; } while (0)
 #define LCD_WRITE(b) do { LCD_WR_L(); LCD_BUS(b); LCD_WR_H(); } while (0)
 
-// [GH] (las máscaras DATA_PA/PB/PC ya no se usan: las funciones Fast usan busLookup)
 
 extern const uint8_t smallFont[1140];
 extern const uint16_t bigFont[1520];
@@ -163,7 +161,7 @@ void LCD_Init(void) {
 	LCD_DATA(0x08);
 	//****************************************
 	LCD_CMD(0x36);  // (MEMORYACCESS)
-	LCD_DATA(LCD_MADCTL_VERTICAL); // [GH vertical] antes: 0x40 | 0x80 | 0x20 | 0x08 (horizontal)
+	LCD_DATA(LCD_MADCTL_VERTICAL);
 	//****************************************
 	LCD_CMD(0x3A); // Set_pixel_format (PIXELFORMAT)
 	LCD_DATA(0x05); // color setings, 05h - 16bit pixel, 11h - 3bit pixel
@@ -206,20 +204,17 @@ void LCD_Init(void) {
 	LCD_DATA(0x80);
 	LCD_DATA(0x00);
 	//****************************************
-	LCD_CMD(0x2A); // Set_column_address 240px (CASET) [GH vertical] antes 0..319
+	LCD_CMD(0x2A); // Set_column_address 240px (CASET)
 	LCD_DATA(0x00);
 	LCD_DATA(0x00);
 	LCD_DATA((ILI9341_TFTWIDTH - 1) >> 8);
 	LCD_DATA((ILI9341_TFTWIDTH - 1) & 0xFF);
 	//****************************************
-	LCD_CMD(0x2B); // Set_page_address 320px (PASET) [GH vertical] antes 0..240
+	LCD_CMD(0x2B); // Set_page_address 320px (PASET)
 	LCD_DATA(0x00);
 	LCD_DATA(0x00);
 	LCD_DATA((ILI9341_TFTHEIGHT - 1) >> 8);
 	LCD_DATA((ILI9341_TFTHEIGHT - 1) & 0xFF);
-	//LCD_DATA(0x01);
-	//LCD_DATA(0xE0);
-	//  LCD_DATA(0x8F);
 	LCD_CMD(0x29); //display on
 	LCD_CMD(0x2C); //display on
 
@@ -275,18 +270,15 @@ void SetWindows(unsigned int x1, unsigned int y1, unsigned int x2,
 void LCD_Clear(unsigned int c) {
 	unsigned int x, y;
 	LCD_CMD(0x02c); // write_memory_start
-	//HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET);
 	LCD_RS_H();
 	LCD_CS_L();
-	SetWindows(0, 0, ILI9341_TFTWIDTH - 1, ILI9341_TFTHEIGHT - 1); // [GH vertical] antes (0, 0, 319, 239)
+	SetWindows(0, 0, ILI9341_TFTWIDTH - 1, ILI9341_TFTHEIGHT - 1);
 	for (x = 0; x < ILI9341_TFTWIDTH; x++)
 		for (y = 0; y < ILI9341_TFTHEIGHT; y++) {
 			LCD_DATA(c >> 8);
 			LCD_DATA(c);
 		}
 	LCD_CS_H();
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_SET);
 }
 //***************************************************************************************************************************************
 // Función para dibujar una línea horizontal - parámetros ( coordenada x, cordenada y, longitud, color)
@@ -294,19 +286,14 @@ void LCD_Clear(unsigned int c) {
 void H_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c) {
 	unsigned int i;
 	LCD_CMD(0x02c); //write_memory_start
-	//HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET);
 	LCD_RS_H();
 	LCD_CS_L();
 
-	//l = l + x;
 	SetWindows(x, y, l + x, y);
-	//j = l; // * 2;
 	for (i = 0; i < l; i++) {
 		LCD_DATA(c >> 8);
 		LCD_DATA(c);
 	}
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_SET);
 	LCD_CS_H();
 }
 //***************************************************************************************************************************************
@@ -315,18 +302,13 @@ void H_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c) {
 void V_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c) {
 	unsigned int i;
 	LCD_CMD(0x02c); //write_memory_start
-	//HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET);
 	LCD_RS_H();
 	LCD_CS_L();
-	//l = l + y;
 	SetWindows(x, y, x, y + l);
-	//j = l; //* 2;
 	for (i = 1; i <= l; i++) {
 		LCD_DATA(c >> 8);
 		LCD_DATA(c);
 	}
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_SET);
 	LCD_CS_H();
 }
 //***************************************************************************************************************************************
@@ -345,8 +327,6 @@ void Rect(unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 		unsigned int c) {
 	LCD_CMD(0x02c); // write_memory_start
-	//HAL_GPIO_WritePin(LCD_RS_GPIO_Port, LCD_RS_Pin, GPIO_PIN_SET);
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_RESET);
 	LCD_CS_L();
 	SetWindows(x, y, x + w - 1, y + h - 1);
 	LCD_RS_H();
@@ -356,11 +336,9 @@ void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 			LCD_DATA(c >> 8);
 			LCD_DATA(c);
 
-			//LCD_DATA(bitmap[k]);
 			k = k - 2;
 		}
 	}
-	//HAL_GPIO_WritePin(LCD_CS_GPIO_Port, LCD_CS_Pin, GPIO_PIN_SET);
 	LCD_CS_H();
 }
 //***************************************************************************************************************************************
@@ -368,7 +346,7 @@ void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h,
 //***************************************************************************************************************************************
 void FillRectFast(unsigned int x, unsigned int y, unsigned int w,
 		unsigned int h, unsigned int c) {
-	/* [GH] Versión con busLookup: el color se separa en byte alto y bajo una sola vez */
+	/* con busLookup: el color se separa en byte alto y bajo una sola vez */
 	const GPIO_Lookup hi = busLookup[(c >> 8) & 0xFF];
 	const GPIO_Lookup lo = busLookup[c & 0xFF];
 
@@ -405,20 +383,16 @@ void LCD_Print(char *text, int x, int y, int fontSize, int color,
 
 	char charInput;
 	int cLength = strlen(text);
-	//Serial.println(cLength, DEC);
 	int charDec;
 	int c;
-	//int charHex;
 	char char_array[cLength + 1];
 	for (int i = 0; text[i] != '\0'; i++) {
 		char_array[i] = text[i];
 	}
 
-	//text.toCharArray(char_array, cLength + 1);
 
 	for (int i = 0; i < cLength; i++) {
 		charInput = char_array[i];
-		//Serial.println(char_array[i]);
 		charDec = (int) charInput;
 		LCD_CS_L();  // CS = 0
 		SetWindows(x + (i * fontXSize), y, x + (i * fontXSize) + fontXSize - 1,
@@ -493,7 +467,7 @@ void LCD_BitmapTransparent(uint16_t x, uint16_t y, uint16_t width,
 //***************************************************************************************************************************************
 void LCD_BitmapFast(unsigned int x, unsigned int y, unsigned int width,
 		unsigned int height, const uint8_t *bitmap) {
-	/* [GH] Versión con busLookup. El bitmap viene en RGB565, byte alto primero */
+	/* con busLookup; el bitmap viene en RGB565, byte alto primero */
 	LCD_CS_L();
 	SetWindows(x, y, x + width - 1, y + height - 1);
 	LCD_RS_H();
@@ -546,7 +520,7 @@ void LCD_Sprite(int x, int y, int width, int height, const uint16_t *bitmap,
 //***************************************************************************************************************************************
 void LCD_SpriteFast(int x, int y, int width, int height, const uint8_t *bitmap,
 		int columns, int index, bool flipX, bool flipY, int offset) {
-	/* [GH] Versión con busLookup; misma lógica de columnas / índice / volteo que antes */
+	/* con busLookup */
 	LCD_CS_L();
 	SetWindows(x, y, x + width - 1, y + height - 1);
 	LCD_RS_H();
@@ -615,7 +589,7 @@ void LCD_Sprite_Transparent(int x, int y, int width, int height,
 }
 
 //***************************************************************************************************************************************
-// [GH] Scroll vertical por hardware (comandos MIPI 0x33 y 0x37)
+// Scroll vertical por hardware (comandos 0x33 y 0x37)
 //   La pantalla se divide en: zona fija arriba (tfa) + zona que se desplaza (vsa) + zona fija abajo (bfa).
 //   tfa + vsa + bfa = 320. LCD_ScrollStart(vsp) elige qué fila de memoria se ve arriba de la zona que se desplaza.
 //***************************************************************************************************************************************

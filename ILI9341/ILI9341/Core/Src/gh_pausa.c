@@ -1,7 +1,6 @@
 /*
  * gh_pausa.c
- * Sprite de pausa 168x96, RGB565 (byte alto primero). const -> queda en flash, no gasta RAM.
- * Generado a partir de un dibujo en Python (estilo neón, igual que los botones).
+ * Sprite de pausa 168x96 en RGB565, byte alto primero (en flash).
  */
 #include "gh_pausa.h"
 

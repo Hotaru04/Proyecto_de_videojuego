@@ -25,14 +25,14 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include "audio.h"      /* motor de audio: TIM6 -> DAC1 (PA4) <- DMA1 Stream5 */
-#include "songs.h"      /* SongEntry (las canciones vienen de la microSD) */
-#include "enlace_spi.h" /* SPI2 hacia las pantallas (una por jugador) */
-#include "beats.h"      /* notas del juego que se mandan a las pantallas */
-#include "controles.h"  /* botones de la ESP32 por USART1 (PA10) */
-#include "juez.h"       /* acierto / fallo, mute del jugador que falla */
-#include "registro.h"   /* bitacora por el USB del ST-Link (Termite, 115200) */
-#include "juego.h"      /* menús, canción, resultados */
+#include "audio.h"
+#include "songs.h"
+#include "enlace_spi.h"
+#include "beats.h"
+#include "controles.h"
+#include "juez.h"
+#include "registro.h"
+#include "juego.h"
 
 /* USER CODE END Includes */
 
@@ -54,9 +54,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-/* ===== Canción inicial =====
- * Número de la canción en la microSD (en orden alfabético de archivo, como salen en el menú).
- * Con JUEGO_INICIAR_EN_MENU = 1 (juego.h) es solo la que aparece marcada en el menú. */
+/* Canción marcada al iniciar (orden alfabético de la microSD) */
 volatile uint8_t song_index = 0;
 
 /* USER CODE END PV */
@@ -104,23 +102,21 @@ int main(void)
   MX_DAC_Init();
   MX_TIM6_Init();
   /* USER CODE BEGIN 2 */
-  Audio_Init();                    /* calcula ARR de TIM6 para 32 kHz y prepara el sintetizador */
-  Audio_Start();                   /* desde aquí el audio corre solo por DMA + interrupciones */
-  /* Prioridades: CubeMX deja el grupo 0 (ninguna interrupción interrumpe a otra) y el audio del DMA
-     tarda varios ms -> se perdían ticks de HAL_GetTick y bytes de la UART. Con el grupo 4:
-     SysTick (0) > UART de los controles (1) > audio (2). */
+  Audio_Init();
+  Audio_Start();
+  /* Prioridades: SysTick (0) > UART de los controles (1) > audio (2) > bitácora (3) */
   HAL_NVIC_SetPriorityGrouping(NVIC_PRIORITYGROUP_4);
   HAL_NVIC_SetPriority(SysTick_IRQn, 0, 0);
   HAL_NVIC_SetPriority(DMA1_Stream5_IRQn, 2, 0);
   HAL_NVIC_SetPriority(TIM6_DAC_IRQn, 2, 0);
 
-  Enlace_Init();                   /* SPI2 maestro: PB13 SCK, PB15 MOSI, PB12 CS jugador 1, PB14 CS jugador 2 */
-  Controles_Init();                /* USART1 RX en PA10 <- TX de la ESP32 */
-  Registro_Init();                 /* USART2 -> ST-Link -> COM de la PC */
+  Enlace_Init();
+  Controles_Init();
+  Registro_Init();
   Registro("=== MusicaGame (maestro) ===");
   Registro("ESP32 TX -> PA10 | SPI2: PB13 SCK, PB15 MOSI, PB12 CS J1, PB14 CS J2 | audio: PA4");
   Registro("microSD (SPI3): PC10 SCK, PC11 MISO, PC12 MOSI, PD2 CS");
-  Juego_Iniciar(song_index);       /* menú de canciones (o la canción directo, ver juego.h) */
+  Juego_Iniciar(song_index);
 
   /* USER CODE END 2 */
 
@@ -131,10 +127,9 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    /* Menús, canción (notas + juez), resultados */
     Juego_Actualizar();
 
-    /* Bitácora: resumen cada 5 s */
+    /* resumen en la bitácora cada 5 s */
     static uint32_t tEstado = 0;
     if (HAL_GetTick() - tEstado >= 5000) {
       tEstado = HAL_GetTick();
@@ -147,7 +142,7 @@ int main(void)
                Juez_EnPausa() ? "  [PAUSA]" : "");
     }
 
-    /* LD2: parpadea = el programa corre; encendido fijo = el jugador 1 está muteado (falló) */
+    /* LD2 parpadea mientras corre; fijo si el jugador 1 está silenciado */
     static uint32_t tLed = 0;
     if (juez_muteado[0]) {
       HAL_GPIO_WritePin(LD2_GPIO_Port, LD2_Pin, GPIO_PIN_SET);
@@ -155,7 +150,6 @@ int main(void)
       tLed = HAL_GetTick();
       HAL_GPIO_TogglePin(LD2_GPIO_Port, LD2_Pin);
     }
-    /* Diagnóstico (Live Expressions): audio_cpu_load, audio_underruns, controles_lineas, juez_aciertos, juez_fallos */
   }
   /* USER CODE END 3 */
 }

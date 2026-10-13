@@ -1,6 +1,6 @@
 /*
  * gh_sprites.h
- * Sprites del Guitar Hero en RAM. Ver gh_sprites.c
+ * Sprites del Beat Hero en RAM.
  */
 #ifndef INC_GH_SPRITES_H_
 #define INC_GH_SPRITES_H_
@@ -8,10 +8,10 @@
 #include <stdint.h>
 
 #define GH_NUM_CARRILES   4
-#define GH_SPR_W          48     /* ancho de nota/botón */
-#define GH_SPR_H          48     /* alto de nota/botón  */
-#define GH_BTN_CUADROS    3      /* columnas en la hoja de cada botón */
-#define GH_COLA_TILE_H    8      /* alto del mosaico de la cola (se repite verticalmente) */
+#define GH_SPR_W          48
+#define GH_SPR_H          48
+#define GH_BTN_CUADROS    3
+#define GH_COLA_TILE_H    8
 
 /* Índices de cuadro en la hoja de botones (parámetro index de LCD_SpriteFast) */
 #define GH_BTN_REPOSO     0
@@ -19,8 +19,8 @@
 #define GH_BTN_SOSTENIDO  2
 
 /* Orden de carriles: 0 verde, 1 rojo, 2 amarillo, 3 azul */
-extern uint8_t btn_green[], btn_red[], btn_yellow[], btn_blue[];       /* 144x48 c/u */
-extern uint8_t note_green[], note_red[], note_yellow[], note_blue[];   /* 48x48 c/u   */
+extern uint8_t btn_green[], btn_red[], btn_yellow[], btn_blue[];
+extern uint8_t note_green[], note_red[], note_yellow[], note_blue[];
 
 extern uint8_t * const gh_btn_sheet[GH_NUM_CARRILES];
 extern uint8_t * const gh_note[GH_NUM_CARRILES];

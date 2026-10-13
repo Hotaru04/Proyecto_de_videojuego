@@ -154,7 +154,7 @@ def leer_cancion(inc, nombre, d):
             flags = 1 if 'NOTE_CHORD' in p else 0
             lista.append((nota, dur, vel, flags))
         arreglos[arr] = lista
-    m = re.search(rf'static\s+const\s+TrackDef\s+\w+\s*\[\]\s*=\s*\{{(.*?)\}};', txt, re.S)
+    m = re.search(r'static\s+const\s+TrackDef\s+\w+\s*\[\]\s*=\s*\{(.*?)\};', txt, re.S)
     pistas = []
     for arr, inst, vol in re.findall(r'TRACK\(\s*(\w+)\s*,\s*INST_(\w+)\s*,\s*VOL\(\s*([0-9.]+)\s*\)\s*\)', m.group(1)):
         pistas.append((INSTR[inst], int(float(vol) * 255.0 + 0.5), arreglos[arr]))

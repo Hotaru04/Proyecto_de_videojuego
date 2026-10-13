@@ -1,15 +1,11 @@
 /*
  * notes.h
- * Notas del piano estándar A0..C8 como NÚMERO MIDI (A4 = 69 = 440 Hz).
- * Se guardan como enteros de 8 bits: la frecuencia nunca se calcula durante la reproducción;
- * synth.c convierte el número MIDI a incremento de fase con una tabla precalculada al iniciar.
- * Sostenidos: CS4 = C#4. Bemoles como alias: DB4 = CS4.
- * Generado automáticamente.
+ * Notas A0..C8 como número MIDI (A4 = 69 = 440 Hz). CS4 = C#4, DB4 = CS4.
  */
 #ifndef INC_NOTES_H_
 #define INC_NOTES_H_
 
-#define REST 0   /* silencio (0 no es una nota de piano: A0 = 21) */
+#define REST 0
 
 #define A0    21   /*    27.500 Hz */
 #define AS0    22   /*    29.135 Hz */

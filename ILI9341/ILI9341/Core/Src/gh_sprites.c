@@ -1,10 +1,6 @@
 /*
  * gh_sprites.c
- * Sprites del Guitar Hero (estilo retrowave), generados automáticamente.
- * Formato: RGB565, 2 bytes por píxel, byte alto primero (lo que esperan LCD_BitmapFast / LCD_SpriteFast).
- * Los arreglos NO son const -> el enlazador los coloca en RAM (.data), igual que megaman[] en Bitmaps.h.
- * Fondo de los sprites: negro (0x0000), así que se dibujan opacos y rápidos sobre fondo negro.
- * Total en RAM: 98304 bytes.
+ * Sprites de botones y notas en RGB565, byte alto primero. No son const: van en RAM (98304 bytes).
  */
 #include "gh_sprites.h"
 

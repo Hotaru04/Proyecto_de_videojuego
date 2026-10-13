@@ -23,7 +23,7 @@ void H_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c);
 void V_line(unsigned int x, unsigned int y, unsigned int l, unsigned int c);
 void Rect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
 void FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
-void FillRectFast(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c); // [GH vertical] prototipo que faltaba
+void FillRectFast(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
 void LCD_Print(char* text, int x, int y, int fontSize, int color, int background);
 
 void LCD_Bitmap(unsigned int x, unsigned int y, unsigned int width, unsigned int height, const uint16_t *bitmap);
@@ -31,11 +31,9 @@ void LCD_BitmapTransparent(uint16_t x, uint16_t y, uint16_t width, uint16_t heig
 void LCD_BitmapFast(unsigned int x, unsigned int y, unsigned int width, unsigned int height, const uint8_t *bitmap);
 void LCD_Sprite(int x, int y, int width, int height, const uint16_t *bitmap,
                 int columns, int index, char flip, char offset);
-//void LCD_Sprite2(int x, int y, int width, int height, unsigned char bitmap[], int columns, int index, char flip, char offset);
 void LCD_SpriteFast(int x, int y, int width, int height, const uint8_t *bitmap, int columns, int index, bool flipX, bool flipY, int offset);
-void LCD_ScrollArea(uint16_t tfa, uint16_t vsa, uint16_t bfa);   // [GH] zonas del scroll vertical por hardware
-void LCD_ScrollStart(uint16_t vsp);                              // [GH] fila de memoria que se ve arriba del scroll
-//void LCD_Sprite_Transparent(int x, int y, int width, int height, const uint16_t *bitmap, uint8_t columns, uint8_t index, uint8_t flip, uint8_t offset, uint16_t transparent_color);
+void LCD_ScrollArea(uint16_t tfa, uint16_t vsa, uint16_t bfa);   // zonas del scroll vertical
+void LCD_ScrollStart(uint16_t vsp);                              // fila de memoria que se ve arriba
 
 
 #endif /* INC_ILI9341_H_ */

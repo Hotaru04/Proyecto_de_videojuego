@@ -304,8 +304,8 @@ def generate_files(midi_name, tpb, salidas, song, bpm, grid, split, out_name):
     salidas = [tuple(s) + (1,) if len(s) == 4 else tuple(s) for s in salidas]
     salidas = sorted(salidas, key=lambda s: s[4])                 # orden estable por canal
     canales = sorted({s[4] for s in salidas})
-    L = [f"/*", f" * {out_name}", f" * Generado por midi_to_c.py desde {midi_name}",
-         f" * Incluir en UN solo .c. Los arreglos son static const (flash).", f" */",
+    L = ["/*", f" * {out_name}", f" * Generado por midi_to_c.py desde {midi_name}",
+         " * Incluir en UN solo .c. Los arreglos son static const (flash).", " */",
          f"#ifndef {guard}", f"#define {guard}", "", '#include "music.h"', '#include "synth.h"', "",
          f"#define SONG_{U}_BPM {bpm}", ""]
     files, stats, defs = [], [], []
@@ -327,7 +327,7 @@ def generate_files(midi_name, tpb, salidas, song, bpm, grid, split, out_name):
             fn = f"song_{song}_canal{c}.h"
             g = f"SONG_{U}_CANAL{c}_H_"
             nombres = ", ".join(stats[i]['nombre'] for i in idx_canal[c])
-            P = [f"/*", f" * {fn}", f" * Canal {c} de {midi_name}: {nombres}  (generado por midi_to_c.py)", f" */",
+            P = ["/*", f" * {fn}", f" * Canal {c} de {midi_name}: {nombres}  (generado por midi_to_c.py)", " */",
                  f"#ifndef {g}", f"#define {g}", "", '#include "music.h"', ""] + por_canal[c] + [f"#endif /* {g} */", ""]
             files.append((fn, "\n".join(P)))
             L.append(f'#include "{fn}"')

@@ -1,17 +1,11 @@
 /*
  * beats.c
- * Notas del juego a partir de las pistas de la canción. Ver beats.h.
- *
- * Cómo se decide cada nota del juego:
- *   1. Se juntan todas las notas MIDI de las pistas del jugador que empiezan en el mismo tick (= un "evento").
- *   2. Carril: la nota más aguda del evento. Graves -> verde ... agudas -> azul, con los cortes puestos
- *      para que cada carril reciba ~1/4 de las notas de ese jugador.
- *      Si es batería, el carril lo da el tambor: bombo verde, caja rojo, hi-hat amarillo, toms/platillos azul.
- *   3. Acorde: si el evento trae BEATS_ACORDE_NOTAS o más notas, se agrega el carril de la más grave
- *      (si es distinto) -> hay que presionar 2 botones.
- *   4. Los eventos a menos de BEATS_SEPARACION_MS del anterior se descartan (si no, es imposible de tocar).
- *   5. Si dura BEATS_LARGA_MIN_MS o más, es nota larga; su cola se corta antes de la siguiente nota.
- * Todo se calcula leyendo las pistas en flash: no hay que regenerar las canciones.
+ * Notas del juego a partir de las pistas de cada jugador:
+ *   - Las notas MIDI que empiezan en el mismo tick forman un evento.
+ *   - El carril sale de la nota más aguda del evento (cortes para repartir ~1/4 de las notas por carril).
+ *     En la batería lo decide el tambor: bombo verde, caja rojo, hi-hat amarillo, toms/platillos azul.
+ *   - Se descartan los eventos a menos de BEATS_SEPARACION_MS del anterior.
+ *   - Si dura BEATS_LARGA_MIN_MS o más es nota larga; su cola se corta antes de la siguiente.
  */
 #include "beats.h"
 #include "gh_protocolo.h"
@@ -20,13 +14,13 @@
 #include "music.h"
 #include "synth.h"
 
-/* Batería (números General MIDI): cada tipo de tambor tiene su carril */
+/* Carril de cada tambor (General MIDI) */
 static uint8_t Carril_Tambor(uint8_t n) {
 	switch (n) {
-		case 35: case 36:                               return 0;   /* bombo        -> verde    */
-		case 37: case 38: case 39: case 40:             return 1;   /* caja / clap  -> rojo     */
-		case 42: case 44: case 46:                      return 2;   /* hi-hat       -> amarillo */
-		default:                                        return 3;   /* toms, platillos -> azul  */
+		case 35: case 36:                   return 0;   /* bombo */
+		case 37: case 38: case 39: case 40: return 1;   /* caja */
+		case 42: case 44: case 46:          return 2;   /* hi-hat */
+		default:                            return 3;   /* toms y platillos */
 	}
 }
 
@@ -35,14 +29,14 @@ typedef struct {
 	uint16_t    largo;
 	uint16_t    i;        /* siguiente nota a leer */
 	uint32_t    tick;     /* tick en que empieza la nota i */
-	uint8_t     bateria;  /* 1 = pista de batería (las notas son tambores, no tonos) */
+	uint8_t     bateria;
 } Cursor;
 
-typedef struct {          /* notas MIDI que empiezan juntas */
+typedef struct {          /* notas MIDI que empiezan en el mismo tick */
 	uint32_t tick;
 	uint32_t dur;         /* la más larga */
-	uint8_t  alta, baja, cuantas;   /* notas con tono (melodía, acordes, bajo) */
-	uint8_t  tambores;              /* carriles de batería que suenan (bits) */
+	uint8_t  alta, baja, cuantas;
+	uint8_t  tambores;    /* bits de los carriles de batería */
 } Evento;
 
 typedef struct {          /* nota del juego */
@@ -54,9 +48,9 @@ typedef struct {          /* nota del juego */
 typedef struct {
 	Cursor  cur[BEATS_MAX_PISTAS];
 	uint8_t n;
-	uint8_t corte[3];     /* notas MIDI donde empiezan rojo, amarillo y azul */
-	Evento  prox;  uint8_t hay_prox;   /* siguiente evento ya leído (para saber dónde cortar las colas) */
-	Gema    gema;  uint8_t hay_gema;   /* siguiente nota lista para mandar */
+	uint8_t corte[3];     /* nota MIDI donde empiezan rojo, amarillo y azul */
+	Evento  prox;  uint8_t hay_prox;   /* siguiente evento (para cortar las colas) */
+	Gema    gema;  uint8_t hay_gema;   /* siguiente nota por mandar */
 } Jugador;
 
 static Jugador  jug[2];
@@ -70,17 +64,15 @@ static uint32_t sep_ticks, larga_min_ticks, anticipa_ticks;
 volatile uint32_t beats_enviadas[2] = { 0, 0 };
 volatile uint32_t beats_tarde = 0;
 
-/* ---------- Conversión de tiempo ---------- */
 static uint32_t Ms_A_Ticks(uint32_t ms)  { return (ms * bpm * MUSIC_PPQ + 59999u) / 60000u; }
 static uint32_t Ticks_A_Ms(uint32_t tk)  { return (uint32_t)(((uint64_t)tk * 60000u) / (bpm * MUSIC_PPQ)); }
 
-/* ---------- Lectura de las pistas ---------- */
 static uint8_t Leer_Evento(Jugador *J, Evento *ev) {
 	for (;;) {
 		uint32_t t = 0xFFFFFFFFu;
 		for (uint8_t k = 0; k < J->n; k++)
 			if (J->cur[k].i < J->cur[k].largo && J->cur[k].tick < t) t = J->cur[k].tick;
-		if (t == 0xFFFFFFFFu) return 0;                    /* se acabaron las pistas */
+		if (t == 0xFFFFFFFFu) return 0;
 
 		ev->tick = t; ev->dur = 0; ev->alta = 0; ev->baja = 255; ev->cuantas = 0; ev->tambores = 0;
 		for (uint8_t k = 0; k < J->n; k++) {
@@ -98,38 +90,37 @@ static uint8_t Leer_Evento(Jugador *J, Evento *ev) {
 				if (!(nt->flags & NOTE_CHORD)) c->tick += nt->dur;
 			}
 		}
-		if (ev->cuantas || ev->tambores) return 1;         /* si solo eran silencios, sigue buscando */
+		if (ev->cuantas || ev->tambores) return 1;         /* si eran solo silencios, sigue */
 	}
 }
 
 static uint8_t Carril(const Jugador *J, uint8_t nota) {
 	uint8_t c = 0;
 	while (c < 3 && nota >= J->corte[c]) c++;
-	return c;                                             /* 0..3 */
+	return c;
 }
 
-/* Arma la siguiente nota del juego del jugador. Devuelve 0 si ya no hay. */
+/* Siguiente nota del juego del jugador; 0 si ya no hay */
 static uint8_t Siguiente_Gema(Jugador *J, Gema *g) {
 	if (!J->hay_prox) return 0;
 	Evento ev = J->prox;
 
 	g->tick = ev.tick;
 	g->largo = ev.dur;
-	if (ev.cuantas) {                                     /* hay notas con tono: mandan ellas */
+	if (ev.cuantas) {
 		g->carriles = (uint8_t)(1u << Carril(J, ev.alta));
 		if (ev.cuantas >= BEATS_ACORDE_NOTAS) g->carriles |= (uint8_t)(1u << Carril(J, ev.baja));
-	} else {                                              /* solo batería: un carril, por importancia */
-		static const uint8_t prioridad[4] = { 1, 0, 3, 2 };   /* caja, bombo, toms/platillos, hi-hat */
+	} else {                                              /* solo batería: el tambor más importante */
+		static const uint8_t prioridad[4] = { 1, 0, 3, 2 };   /* caja, bombo, toms, hi-hat */
 		for (uint8_t k = 0; k < 4; k++)
 			if (ev.tambores & (1u << prioridad[k])) { g->carriles = (uint8_t)(1u << prioridad[k]); break; }
-		g->largo = 0;                                     /* un golpe de batería nunca es nota larga */
+		g->largo = 0;
 	}
 
-	/* descarta lo que cae demasiado cerca; lo que queda en prox es la siguiente nota real */
+	/* salta los eventos demasiado cercanos */
 	do { J->hay_prox = Leer_Evento(J, &J->prox); }
 	while (J->hay_prox && J->prox.tick < ev.tick + sep_ticks);
 
-	/* la cola no puede tapar la siguiente nota */
 	if (J->hay_prox) {
 		uint32_t max = J->prox.tick - ev.tick - sep_ticks;
 		if (g->largo > max) g->largo = max;
@@ -142,14 +133,13 @@ static void Cursores_Al_Inicio(Jugador *J) {
 	for (uint8_t k = 0; k < J->n; k++) { J->cur[k].i = 0; J->cur[k].tick = 0; }
 }
 
-/* Cortes entre carriles: cada carril recibe más o menos 1/4 de las notas del jugador
- * (por eso se cuentan las notas: si se repartiera el rango a partes iguales, casi todo caería en 1 o 2 carriles) */
+/* Cortes entre carriles para que cada uno reciba ~1/4 de las notas del jugador */
 static void Calcular_Cortes(Jugador *J) {
 	uint16_t hist[128] = { 0 };
 	uint32_t total = 0;
 	Evento ev;
 	while (Leer_Evento(J, &ev)) {
-		if (!ev.cuantas) continue;                        /* la batería no usa cortes */
+		if (!ev.cuantas) continue;
 		if (hist[ev.alta & 0x7F] < 0xFFFF) hist[ev.alta & 0x7F]++;
 		total++;
 	}
@@ -159,12 +149,11 @@ static void Calcular_Cortes(Jugador *J) {
 	uint8_t c = 0, nota = 0;
 	for (uint32_t n = 0; n < 128 && c < 3; n++) {
 		acum += hist[n];
-		/* el corte c va después de la nota donde se pasa la fracción (c+1)/4 */
 		while (c < 3 && acum * 4u >= total * (c + 1u)) J->corte[c++] = (uint8_t)(n + 1);
 		if (hist[n]) nota = (uint8_t)n;
 	}
 	while (c < 3) J->corte[c++] = (uint8_t)(nota + 1);
-	/* cortes repetidos (una nota domina): se separan para que no queden carriles vacíos seguidos */
+	/* si una nota domina, separar los cortes repetidos */
 	for (c = 1; c < 3; c++) if (J->corte[c] <= J->corte[c - 1]) J->corte[c] = (uint8_t)(J->corte[c - 1] + 1);
 }
 
@@ -184,14 +173,13 @@ static void Jugador_Preparar(Jugador *J, const Song *s, const uint8_t *pistas, u
 	J->hay_gema = Siguiente_Gema(J, &J->gema);
 }
 
-/* Lo máximo que puede ganar el jugador (puntos base, sin escalar): recorre una copia de sus notas tal
- * como se van a mandar y suma PERFECTO por cada una más lo de sostener completas las notas largas. */
+/* Puntos base máximos del jugador: todas PERFECTO y las notas largas sostenidas completas */
 static uint32_t Maximo(const Jugador *J) {
-	Jugador c = *J;                                       /* copia: no mueve los cursores reales */
+	Jugador c = *J;
 	uint32_t total = 0;
 	while (c.hay_gema) {
 		uint32_t largo = Ticks_A_Ms(c.gema.largo);
-		if (largo > 0xFFFF) largo = 0xFFFF;               /* igual que en Mandar() */
+		if (largo > 0xFFFF) largo = 0xFFFF;
 		total += JUEZ_PUNTOS_PERFECTO + (largo / JUEZ_SOSTENIDA_CADA_MS) * JUEZ_PUNTOS_SOSTENIDA;
 		c.hay_gema = Siguiente_Gema(&c, &c.gema);
 	}
@@ -203,7 +191,7 @@ static void Reiniciar(uint8_t nueva) {
 	Jugador_Preparar(&jug[0], s, entrada->p1_tracks, entrada->p1_n);
 	Jugador_Preparar(&jug[1], s, entrada->p2_tracks, entrada->p2_n);
 	tick_previo = 0;
-	Juez_Iniciar(entrada, nueva);                         /* borra las notas que el juez llevaba */
+	Juez_Iniciar(entrada, nueva);
 	if (nueva) { Juez_Maximo(0, Maximo(&jug[0])); Juez_Maximo(1, Maximo(&jug[1])); }
 	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_CANCION, cancion, (uint8_t)bpm, (uint8_t)(bpm >> 8), 0, 0);
 }
@@ -227,15 +215,15 @@ void Beats_Detener(void) {
 	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_ALTO, 0, 0, 0, 0, 0);
 }
 
-/* Manda la gema actual del jugador j: llega al botón dentro de faltan_ms */
+/* Manda la nota actual del jugador j: llega al botón dentro de faltan_ms */
 static void Mandar(uint8_t j, Jugador *J, uint32_t faltan_ms) {
 	uint32_t faltan = faltan_ms + BEATS_LATENCIA_MS;
 	uint32_t largo  = Ticks_A_Ms(J->gema.largo);
 	if (faltan > 0xFFFF) faltan = 0xFFFF;
 	if (largo  > 0xFFFF) largo  = 0xFFFF;
-	uint8_t c = 0;                                        /* una nota por botón: el carril más bajo */
+	uint8_t c = 0;
 	while (c < 3 && !(J->gema.carriles & (1u << c))) c++;
-	Juez_NotaNueva(j, c, (uint16_t)faltan, (uint16_t)largo);   /* el juez la registra y la manda */
+	Juez_NotaNueva(j, c, (uint16_t)faltan, (uint16_t)largo);
 	beats_enviadas[j]++;
 }
 
@@ -244,7 +232,7 @@ void Beats_Previa(uint32_t faltan_ms) {
 	for (uint8_t j = 0; j < 2; j++) {
 		Jugador *J = &jug[j];
 		while (J->hay_gema) {
-			uint32_t t = Ticks_A_Ms(J->gema.tick) + faltan_ms;   /* cuánto le falta a esta nota */
+			uint32_t t = Ticks_A_Ms(J->gema.tick) + faltan_ms;
 			if (t > GH_ANTICIPACION_MS) break;
 			Mandar(j, J, t);
 			J->hay_gema = Siguiente_Gema(J, &J->gema);
@@ -256,14 +244,14 @@ void Beats_Actualizar(void) {
 	if (!activo || !Music_IsPlaying()) return;
 
 	uint32_t ahora = Music_GetTick();
-	if (ahora < tick_previo) Reiniciar(0);                 /* la canción dio la vuelta (repetir) */
+	if (ahora < tick_previo) Reiniciar(0);                 /* la canción volvió a empezar */
 	tick_previo = ahora;
 
 	for (uint8_t j = 0; j < 2; j++) {
 		Jugador *J = &jug[j];
 		while (J->hay_gema && J->gema.tick <= ahora + anticipa_ticks) {
 			if (J->gema.tick >= ahora) Mandar(j, J, Ticks_A_Ms(J->gema.tick - ahora));
-			else beats_tarde++;                           /* ya pasó: no tiene sentido mandarla */
+			else beats_tarde++;
 			J->hay_gema = Siguiente_Gema(J, &J->gema);
 		}
 	}

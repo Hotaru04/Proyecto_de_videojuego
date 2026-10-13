@@ -6,22 +6,13 @@ midi_to_c_gui.py - Interfaz gráfica del conversor MIDI -> C para el motor de au
     python midi_to_c_gui.py            (o doble clic)
     python midi_to_c_gui.py cancion.mid
 
-Necesita midi_to_c.py en la misma carpeta (usa exactamente la misma conversión).
+Necesita midi_to_c.py en la misma carpeta.
 
-Qué hace:
-  1. Abrir MIDI: lista sus pistas con canal, cantidad de notas, rango e instrumento sugerido.
-  2. Por cada pista eliges: usarla o no, a qué pista de salida va (mismo nombre = se combinan),
-     instrumento del sintetizador y volumen.
-  3. Piano roll: dibuja lo que REALMENTE queda guardado en el arreglo C (después de cuantizar,
-     acordes y silencios), una banda por pista de salida. Pasa el mouse sobre una nota para ver su dato.
-  4. Código C: el .h tal cual se va a exportar.
-  5. Memoria: eventos, bytes de flash, polifonía y duración por pista.
-  6. Exportar: escribe los .h en la carpeta que elijas.
-  7. Guardar en microSD: guarda la canción abierta en la biblioteca (MusicaGame/canciones/, NO en el STM)
-     y escribe TODAS las canciones de la biblioteca como .ghs en <tarjeta>/CANCIONES/.
-     MusicaGame solo las lee de la microSD: en la flash no hay ninguna.
-     Canal 1 = notas del jugador 1, canal 2 = jugador 2. Pon un "Nombre C" corto (p. ej. animals):
-     es el nombre del archivo en la tarjeta (animals.ghs); el menú las ordena por ese nombre.
+  - Abrir MIDI: lista sus pistas; en cada una eliges pista de salida, instrumento y volumen.
+  - Piano roll, código C y memoria de lo que se va a exportar.
+  - Exportar .h: escribe los .h en la carpeta que elijas.
+  - Guardar en microSD: guarda la canción en MusicaGame/canciones/ y escribe todas las canciones
+    como .ghs en <tarjeta>/CANCIONES/. Canal 1 = jugador 1, canal 2 = jugador 2.
 """
 import os
 import sys
@@ -515,9 +506,7 @@ class App(tk.Tk):
         for f, txt in self.files:
             with open(os.path.join(d, f), 'w', encoding='utf-8') as fh:
                 fh.write(txt)
-        song = mc.c_ident(self.song.get()) or "cancion"
-        messagebox.showinfo("Listo", f"Escribí {len(self.files)} archivo(s) en:\n{d}\n\n"
-                                     f"En main.c:\n  #include \"song_{song}.h\"\n  Audio_PlaySong(&song_{song}, 0);")
+        messagebox.showinfo("Listo", f"Escribí {len(self.files)} archivo(s) en:\n{d}")
         self.status.set(f"Exportado a {d}")
 
     def save_sd(self):

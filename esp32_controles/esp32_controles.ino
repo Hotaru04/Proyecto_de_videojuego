@@ -7,7 +7,7 @@
 /* ---------- UART hacia el STM32 ---------- */
 #define UART_STM   Serial2
 #define UART_BAUD  115200
-#define PIN_RX2    16      
+#define PIN_RX2    16
 #define PIN_TX2    17
 
 #define MAX_JUGADORES 2
@@ -21,14 +21,12 @@ struct Boton {
     const char *nombre;
 };
 
-/* Cada color tiene DOS botones del control: cualquiera de los dos vale.
- * La máscara junta los dos; solo se manda "presionado" cuando se aprieta el primero de los dos
- * y "_off" cuando se suelta el último (así el STM nunca ve un _off mientras el otro sigue apretado). */
+/* Mapeo de Botones para cada acción y mascara para el STM32-UART */
 static const Boton botones[] = {
-    { GRUPO_BOTONES, 0x0001 | 0x0040, "A"     },   /* verde:    A  o 0x0040 */
-    { GRUPO_BOTONES, 0x0002 | 0x0010, "B"     },   /* rojo:     B  o 0x0010 */
-    { GRUPO_BOTONES, 0x0004 | 0x0020, "X"     },   /* amarillo: X  o 0x0020 */
-    { GRUPO_BOTONES, 0x0008 | 0x0080, "Y"     },   /* azul:     Y  o 0x0080 */
+    { GRUPO_BOTONES, 0x0001 | 0x0040, "A"     },
+    { GRUPO_BOTONES, 0x0002 | 0x0010, "B"     },
+    { GRUPO_BOTONES, 0x0004 | 0x0020, "X"     },
+    { GRUPO_BOTONES, 0x0008 | 0x0080, "Y"     },
     { GRUPO_DPAD,    0x01,   "Up"    },
     { GRUPO_DPAD,    0x02,   "Down"  },
     { GRUPO_DPAD,    0x04,   "Right" },
@@ -54,7 +52,7 @@ static uint16_t leerGrupo(const Estado &e, uint8_t grupo) {
     }
 }
 
-/* Manda "pN_nombre\n" (presionado) o "pN_nombre_off\n" (soltado) al STM32 y al monitor serie */
+/* Manda "pN_nombre\n" (presionado) o "pN_nombre_off\n" (soltado) al STM32 */
 static void enviar(int jugador, const char *nombre, bool presionado) {
     char linea[20];
     snprintf(linea, sizeof(linea), "p%d_%s%s\n", jugador + 1, nombre, presionado ? "" : "_off");
@@ -62,8 +60,7 @@ static void enviar(int jugador, const char *nombre, bool presionado) {
     Serial.print(linea);
 }
 
-/* Si un control se desconecta con botones apretados, avisa que se soltaron
-   (si no, el STM se quedaría creyendo que siguen presionados) */
+/* Si un control se desconecta con botones apretados, avisa que se soltaron todos los botones */
 static void soltarTodo(int j) {
     for (const Boton &b : botones)
         if ((leerGrupo(previo[j], b.grupo) & b.mascara) != 0)
@@ -96,7 +93,7 @@ void onDisconnectedController(ControllerPtr ctl) {
     }
 }
 
-/* ---------- Detectar cambios: cada botón por separado (varios a la vez funcionan) ---------- */
+/* Detectar cambios */
 static void revisarJugador(int j) {
     ControllerPtr ctl = jugadores[j];
     if (ctl == nullptr || !ctl->isConnected() || !ctl->hasData() || !ctl->isGamepad())
@@ -120,9 +117,8 @@ void setup() {
     Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
     BP32.setup(&onConnectedController, &onDisconnectedController);
 
-    /* Borra los emparejamientos en cada reinicio: los controles hay que volver a ponerlos en
-       modo emparejar. Si comentas esta línea, se reconectan solos. */
-    BP32.forgetBluetoothKeys();
+    /* Borra los emparejamientos */
+    // BP32.forgetBluetoothKeys();
 
     BP32.enableVirtualDevice(false);
 }
@@ -132,5 +128,5 @@ void loop() {
         for (int j = 0; j < MAX_JUGADORES; j++)
             revisarJugador(j);
     }
-    delay(1);   /* cede el CPU (evita el watchdog). El ejemplo traía 150 ms: demasiado lento para el juego */
+    delay(1);
 }
