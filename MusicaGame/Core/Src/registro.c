@@ -1,6 +1,6 @@
 /*
  * registro.c
- * USART2 TX por interrupción con buffer circular. Ver registro.h.
+ * USART2 TX por interrupción con buffer circular.
  */
 #include "registro.h"
 #include "main.h"
@@ -18,11 +18,10 @@ void Registro_Init(void) {
 #if REGISTRO_ACTIVO
 	RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
 	(void)RCC->APB1ENR;
-	/* PA2/PA3 ya quedan en función alterna 7 por MX_GPIO_Init (CubeMX) */
 	USART2->CR1 = 0;
-	USART2->BRR = (HAL_RCC_GetPCLK1Freq() + BAUDIOS / 2u) / BAUDIOS;   /* APB1 = 40 MHz */
+	USART2->BRR = (HAL_RCC_GetPCLK1Freq() + BAUDIOS / 2u) / BAUDIOS;
 	USART2->CR1 = USART_CR1_TE | USART_CR1_UE;
-	HAL_NVIC_SetPriority(USART2_IRQn, 3, 0);         /* la más baja: es solo para ver */
+	HAL_NVIC_SetPriority(USART2_IRQn, 3, 0);
 	HAL_NVIC_EnableIRQ(USART2_IRQn);
 #endif
 }
@@ -33,15 +32,15 @@ void USART2_IRQHandler(void) {
 			USART2->DR = (uint8_t)buf[r];
 			r = (r + 1) & (BUF_N - 1);
 		} else {
-			USART2->CR1 &= ~USART_CR1_TXEIE;            /* ya no hay nada que mandar */
+			USART2->CR1 &= ~USART_CR1_TXEIE;
 		}
 	}
 }
 
 static void Poner(const char *s, uint32_t n) {
-	__disable_irq();                                   /* se puede llamar desde varias partes */
+	__disable_irq();
 	uint32_t libre = (r - w - 1) & (BUF_N - 1);
-	if (n > libre) { registro_perdidos++; __enable_irq(); return; }   /* línea entera o nada */
+	if (n > libre) { registro_perdidos++; __enable_irq(); return; }
 	for (uint32_t i = 0; i < n; i++) { buf[w] = s[i]; w = (w + 1) & (BUF_N - 1); }
 	USART2->CR1 |= USART_CR1_TXEIE;
 	__enable_irq();

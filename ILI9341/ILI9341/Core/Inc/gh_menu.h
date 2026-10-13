@@ -1,7 +1,7 @@
 /*
  * gh_menu.h
- * Pantallas fuera de la pista: lista de canciones, resultados (ganador) y menú final
- * (SELECCIONAR CANCION / REVANCHA). Las decide MusicaGame con GH_PKT_PANTALLA; aquí solo se dibujan.
+ * Lista de canciones, resultadosy menú final
+ * Autores: Abner Quiej y Edwin Parada
  */
 #ifndef INC_GH_MENU_H_
 #define INC_GH_MENU_H_

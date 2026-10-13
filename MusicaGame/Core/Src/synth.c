@@ -1,15 +1,14 @@
 /*
  * synth.c
- * Voces DDS (acumulador de fase de 32 bits + tabla de onda) con envolvente ADSR en punto fijo.
- * Sin float durante la reproducción: los floats solo se usan una vez en Synth_Init.
+ * Voces DDS (acumulador de fase de 32 bits) con envolvente ADSR en punto fijo.
+ * Solo Synth_Init usa float.
  */
 #include "synth.h"
 
-/* El render es el código más caliente del proyecto (voces x 32 000 muestras/s): se optimiza
- * aunque el proyecto compile en -O0 (Debug). No cambia el resultado, solo la velocidad. */
+/* El render corre 32000 veces por segundo por voz: se optimiza aunque el proyecto compile en -O0 */
 #pragma GCC optimize ("O2")
 
-/* ---------- Tabla de seno: 256 muestras int16 (512 bytes en flash) ---------- */
+/* Tabla de seno de 256 muestras */
 static const int16_t sine_table[256] = {
 	     0,    804,   1608,   2410,   3212,   4011,   4808,   5602,   6393,   7179,   7962,   8739,   9512,  10278,  11039,  11793,
 	 12539,  13279,  14010,  14732,  15446,  16151,  16846,  17530,  18204,  18868,  19519,  20159,  20787,  21403,  22005,  22594,
@@ -28,7 +27,7 @@ static const int16_t sine_table[256] = {
 	-23170, -22594, -22005, -21403, -20787, -20159, -19519, -18868, -18204, -17530, -16846, -16151, -15446, -14732, -14010, -13279,
 	-12539, -11793, -11039, -10278,  -9512,  -8739,  -7962,  -7179,  -6393,  -5602,  -4808,  -4011,  -3212,  -2410,  -1608,   -804,};
 
-/* ---------- Instrumentos ---------- */
+/* Instrumentos */
 const Instrument synth_instruments[INST_COUNT] = {
 	/* wave           A   D    S    R   amp */
 	[INST_LEAD]   = { WAVE_SINE,      5, 120, 180,  80, 255 },
@@ -38,25 +37,25 @@ const Instrument synth_instruments[INST_COUNT] = {
 	[INST_DRUMS]  = { WAVE_NOISE,     1, 120,   0,  30, 170 },
 };
 
-/* ---------- Envolvente en Q24 (1.0 = 1<<24) ---------- */
+/* Envolvente en Q24 (1.0 = 1 << 24) */
 #define ENV_MAX  (1 << 24)
 typedef enum { ENV_OFF = 0, ENV_ATTACK, ENV_DECAY, ENV_SUSTAIN, ENV_RELEASE } EnvStage;
 
 typedef struct {
-	uint32_t phase;         /* acumulador de fase: 2^32 = un ciclo completo */
+	uint32_t phase;         /* 2^32 = un ciclo */
 	uint32_t inc;           /* incremento por muestra = f * 2^32 / Fs */
 	int32_t  level;         /* nivel de envolvente Q24 */
 	int32_t  attack_step, decay_step, release_step, sustain;
 	uint16_t ticks_left;    /* ticks hasta soltar la nota */
-	uint8_t  stage;         /* EnvStage */
+	uint8_t  stage;
 	uint8_t  wave;
 	uint8_t  track;
-	uint8_t  gain;          /* velocidad * amplitud del instrumento (0..255) */
-	uint32_t age;           /* para robar la voz más vieja si no hay libres */
+	uint8_t  gain;          /* velocidad * amplitud del instrumento */
+	uint32_t age;           /* para robar la voz más vieja */
 } Voice;
 
 static Voice    voices[SYNTH_MAX_VOICES];
-static uint32_t note_inc[128];       /* incremento de fase por nota MIDI (512 bytes RAM) */
+static uint32_t note_inc[128];       /* incremento de fase por nota MIDI */
 static uint32_t fs = 32000;
 static uint32_t age_counter = 0;
 static uint32_t rng = 0x12345678u;   /* generador de ruido xorshift32 */
@@ -70,7 +69,7 @@ static int32_t Steps(uint32_t ms, int32_t span) {
 
 void Synth_Init(uint32_t sample_rate) {
 	fs = sample_rate;
-	/* f(m) = 440 * 2^((m-69)/12); inc = f * 2^32 / fs. Se calcula una sola vez (sin libm). */
+	/* f(m) = 440 * 2^((m-69)/12), inc = f * 2^32 / fs */
 	const double semitono = 1.0594630943592953;
 	double f = 440.0;
 	for (int m = 69; m < 128; m++) { note_inc[m] = (uint32_t)(f * 4294967296.0 / fs + 0.5); f *= semitono; }
@@ -93,8 +92,8 @@ static Voice *Synth_AllocVoice(void) {
 	Voice *best = &voices[0];
 	for (int i = 0; i < SYNTH_MAX_VOICES; i++) {
 		Voice *v = &voices[i];
-		if (v->stage == ENV_OFF) return v;                       /* libre */
-		/* si no hay libres: preferir la que está en release y más baja; si no, la más vieja */
+		if (v->stage == ENV_OFF) return v;
+		/* sin voces libres: la que está en release y más baja, si no la más vieja */
 		int vr = (v->stage == ENV_RELEASE), br = (best->stage == ENV_RELEASE);
 		if (vr > br || (vr == br && (vr ? v->level < best->level : v->age < best->age))) best = v;
 	}
@@ -110,7 +109,7 @@ void Synth_NoteOn(uint8_t track, uint8_t inst, uint8_t note, uint8_t vel, uint16
 	uint16_t decay_ms = in->decay_ms;
 	uint32_t inc = note_inc[note];
 
-	if (inst == INST_DRUMS) {                 /* mapa de batería General MIDI simplificado */
+	if (inst == INST_DRUMS) {                 /* batería General MIDI simplificada */
 		if (note <= 36)                        { wave = WAVE_TRIANGLE; inc = note_inc[31]; decay_ms = 160; } /* bombo ~49 Hz */
 		else if (note == 42 || note == 44)     { decay_ms = 35; }    /* hi-hat cerrado */
 		else if (note == 46)                   { decay_ms = 150; }   /* hi-hat abierto */
@@ -118,7 +117,7 @@ void Synth_NoteOn(uint8_t track, uint8_t inst, uint8_t note, uint8_t vel, uint16
 		else                                   { decay_ms = 350; }   /* platillos / toms */
 	}
 
-	v->stage = ENV_OFF;                       /* evita que el render la use a medio configurar */
+	v->stage = ENV_OFF;                       /* que el render no la use a medio configurar */
 	v->phase = 0;
 	v->inc = inc;
 	v->wave = wave;
@@ -146,11 +145,11 @@ void Synth_Render(int32_t *mix, uint32_t n, const uint8_t *track_vol) {
 	for (int k = 0; k < SYNTH_MAX_VOICES; k++) {
 		Voice *v = &voices[k];
 		if (v->stage == ENV_OFF) continue;
-		/* ganancia total 0..255 = velocidad*amplitud * volumen de pista */
+		/* ganancia = velocidad * amplitud * volumen de pista */
 		int32_t gain = ((int32_t)v->gain * track_vol[v->track]) >> 8;
 
 		for (uint32_t i = 0; i < n; i++) {
-			/* --- envolvente ADSR --- */
+			/* envolvente ADSR */
 			switch (v->stage) {
 			case ENV_ATTACK:
 				v->level += v->attack_step;
@@ -171,7 +170,7 @@ void Synth_Render(int32_t *mix, uint32_t n, const uint8_t *track_vol) {
 			}
 			if (v->stage == ENV_OFF) break;
 
-			/* --- oscilador DDS: muestra Q15 (-32768..32767) --- */
+			/* oscilador, muestra en Q15 */
 			int32_t s;
 			uint32_t p = v->phase;
 			switch (v->wave) {
@@ -193,7 +192,7 @@ void Synth_Render(int32_t *mix, uint32_t n, const uint8_t *track_vol) {
 			}
 			v->phase = p + v->inc;
 
-			/* --- envolvente y volumen (todo entero) --- */
+			/* envolvente y volumen */
 			s = (s * (v->level >> 9)) >> 15;       /* level Q24 -> Q15 */
 			mix[i] += (s * gain) >> 8;
 		}

@@ -1,28 +1,13 @@
 /*
  * juez.h
- * El juez del juego: califica cada golpe con el reloj de MusicaGame, lleva los puntos, mutea la pista
- * del jugador que falla (hasta que vuelva a atinar), maneja la pausa y le avisa a su pantalla qué dibujar.
+ * Califica cada golpe, lleva los puntos, silencia la pista del jugador que falla y maneja la pausa.
  *
- *   beats.c  -> Juez_NotaNueva()   cada nota que se manda a una pantalla
- *   main.c   -> Juez_Actualizar()  en el while(1)
- *
- * Calificación según qué tan lejos del momento en que la nota llega al botón se presionó (antes o después):
- *   hasta JUEZ_PERFECTO_MS  -> PERFECTO, 100 puntos
- *   hasta JUEZ_MEDIO_MS     -> MEDIO,     50 puntos
- *   hasta JUEZ_JUSTO_MS     -> JUSTO,     10 puntos
- *   más lejos o nunca       -> FALLO,      0 puntos y se mutea la pista del jugador
- * Cualquier acierto (aunque sea JUSTO) hace que la pista vuelva a sonar.
- *
- * Notas largas: además de la calificación del golpe, mientras se sostiene suma JUEZ_PUNTOS_SOSTENIDA
- * cada JUEZ_SOSTENIDA_CADA_MS (si la suelta antes, se queda con lo que ya sumó).
- *
- * Puntos iguales para los dos: cada jugador tiene distinta cantidad de notas, así que lo que gana se escala
- * para que el máximo posible (todas PERFECTO y todas las notas largas sostenidas completas) sea
- * JUEZ_PUNTOS_MAXIMOS para los dos. Por eso una nota de quien tiene menos notas vale más.
- *
- * Pausa: Start de cualquier jugador. Solo el que la puso maneja el menú de pausa:
- *   flechas mueven, A (verde) elige:  CONTINUAR / SALIR AL MENU   (Start también continúa)
- * SALIR lo hace juego.c (ver Juez_Pedido): termina la partida y muestra quién ganó.
+ * Calificación por la distancia al momento en que la nota llega al botón:
+ *   hasta JUEZ_PERFECTO_MS PERFECTO, hasta JUEZ_MEDIO_MS MEDIO, hasta JUEZ_JUSTO_MS JUSTO, si no FALLO.
+ * Notas largas: suman JUEZ_PUNTOS_SOSTENIDA cada JUEZ_SOSTENIDA_CADA_MS mientras se sostienen.
+ * Los puntos se escalan para que el máximo de cada jugador sea JUEZ_PUNTOS_MAXIMOS,
+ * aunque uno tenga más notas que el otro.
+ * Pausa: CONTINUAR / SALIR AL MENU, solo la maneja quien la puso.
  */
 #ifndef INC_JUEZ_H_
 #define INC_JUEZ_H_
@@ -33,32 +18,29 @@
 #define JUEZ_PERFECTO_MS   60
 #define JUEZ_MEDIO_MS      120
 #define JUEZ_JUSTO_MS      180
-#define JUEZ_AJUSTE_MS     0     /* si en la bitácora casi todos los golpes salen "+40 ms" (tarde), pon 40 aquí:
-                                    compensa el retraso del Bluetooth del control */
+#define JUEZ_AJUSTE_MS     0     /* compensa el retraso del control si los golpes salen tarde */
 
 #define JUEZ_PUNTOS_PERFECTO 100
 #define JUEZ_PUNTOS_MEDIO     50
 #define JUEZ_PUNTOS_JUSTO     10
 
-#define JUEZ_PUNTOS_SOSTENIDA   5     /* puntos ... */
-#define JUEZ_SOSTENIDA_CADA_MS 100    /* ... por cada tanto de nota larga sostenida (50 puntos por segundo) */
+#define JUEZ_PUNTOS_SOSTENIDA   5
+#define JUEZ_SOSTENIDA_CADA_MS 100
 
-#define JUEZ_PUNTOS_MAXIMOS 100000u   /* puntaje perfecto, igual para los dos jugadores */
+#define JUEZ_PUNTOS_MAXIMOS 100000u
 
 #define JUEZ_NOTAS_POR_CARRIL 16
 
-/* Lo que pidió el jugador en el menú de pausa */
 #define JUEZ_PEDIDO_NADA       0
 #define JUEZ_PEDIDO_SALIR      1
 
-void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion);   /* e = 0: nada. Al repetir (0) se conservan los puntos */
-void Juez_Maximo(uint8_t jugador, uint32_t puntos_base);   /* lo máximo que puede ganar (lo calcula beats.c) */
+void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion);
+void Juez_Maximo(uint8_t jugador, uint32_t puntos_base);
 void Juez_NotaNueva(uint8_t jugador, uint8_t carril, uint16_t faltan_ms, uint16_t largo_ms);
 void Juez_Actualizar(void);
 uint8_t Juez_EnPausa(void);
-uint8_t Juez_Pedido(void);            /* JUEZ_PEDIDO_*; se borra al leerlo */
+uint8_t Juez_Pedido(void);            /* se borra al leerlo */
 
-/* Diagnóstico (Live Expressions): [0] jugador 1, [1] jugador 2 */
 extern volatile uint32_t juez_aciertos[2], juez_fallos[2], juez_puntos[2];
 extern volatile uint8_t  juez_muteado[2];
 

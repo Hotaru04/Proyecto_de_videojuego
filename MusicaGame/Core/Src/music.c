@@ -1,6 +1,6 @@
 /*
  * music.c
- * Secuenciador: avanza todas las pistas con un único reloj de ticks y dispara notas en synth.c.
+ * Secuenciador: avanza todas las pistas con un mismo reloj de ticks y dispara las notas en synth.c.
  */
 #include "music.h"
 #include "synth.h"
@@ -13,27 +13,23 @@ static uint8_t  playing = 0;
 static uint8_t  looping = 0;
 
 static uint32_t sample_rate = 32000;
-static uint32_t spt_q16 = 0;        /* muestras por tick en punto fijo 16.16 */
-static uint32_t frac_q16 = 0;       /* fracción acumulada */
+static uint32_t spt_q16 = 0;        /* muestras por tick, punto fijo 16.16 */
+static uint32_t frac_q16 = 0;
 static uint32_t samples_to_tick = 0;
 static uint32_t song_tick = 0;
 
-__attribute__((weak)) void Music_OnNoteStart(uint8_t track, uint8_t note, uint8_t vel, uint16_t dur_ticks) {
-	(void)track; (void)note; (void)vel; (void)dur_ticks;
-}
-__attribute__((weak)) void Music_OnSongEnd(void) {}
 void Music_Init(uint32_t rate) {
 	sample_rate = rate;
 	playing = 0;
 }
 
-/* Muestras por tick = Fs * 60 / (BPM * PPQ). Ej.: 32000*60/(120*48) = 333.33 */
+/* muestras por tick = Fs * 60 / (BPM * PPQ) */
 static void Music_SetTempo(uint16_t bpm) {
 	uint64_t num = (uint64_t)sample_rate * 60u << 16;
 	spt_q16 = (uint32_t)(num / ((uint32_t)bpm * MUSIC_PPQ));
 }
 
-/* Siguiente intervalo de muestras hasta el próximo tick (reparte la fracción: sin deriva) */
+/* Muestras hasta el próximo tick; la fracción se acumula para no tener deriva */
 static void Music_ScheduleNextTick(void) {
 	frac_q16 += spt_q16;
 	samples_to_tick = frac_q16 >> 16;
@@ -41,7 +37,7 @@ static void Music_ScheduleNextTick(void) {
 	if (samples_to_tick == 0) samples_to_tick = 1;
 }
 
-/* Dispara todas las notas de las pistas cuyo 'wait' llegó a 0 */
+/* Dispara las notas de las pistas cuyo 'wait' llegó a 0 */
 static void Music_ProcessEvents(void) {
 	uint8_t alguna_sonando = 0;
 	for (uint8_t t = 0; t < num_tracks; t++) {
@@ -52,7 +48,6 @@ static void Music_ProcessEvents(void) {
 			if (n->note != REST) {
 				uint8_t vel = n->vel ? n->vel : MUSIC_DEFAULT_VEL;
 				Synth_NoteOn(t, tr->def->instrument, n->note, vel, n->dur);
-				Music_OnNoteStart(t, n->note, vel, n->dur);
 			}
 			tr->wait = (n->flags & NOTE_CHORD) ? 0 : n->dur;
 		}
@@ -60,19 +55,19 @@ static void Music_ProcessEvents(void) {
 	}
 	if (!alguna_sonando && !Synth_ActiveVoices()) {
 		if (looping) { Music_Play(song, 1); }
-		else { playing = 0; Music_OnSongEnd(); }
+		else playing = 0;
 	}
 }
 
 void Music_Play(const Song *s, uint8_t loop) {
-	playing = 0;                         /* evita que audio.c avance mientras se reinicia */
+	playing = 0;
 	song = s;
 	looping = loop;
 	num_tracks = s->num_tracks > MUSIC_MAX_TRACKS ? MUSIC_MAX_TRACKS : s->num_tracks;
 	for (uint8_t t = 0; t < num_tracks; t++) {
 		tracks[t].def = &s->tracks[t];
 		tracks[t].index = 0;
-		tracks[t].wait = 0;              /* todas arrancan en t = 0 */
+		tracks[t].wait = 0;
 		tracks[t].volume = s->tracks[t].volume;
 		tracks[t].state = TRACK_PLAYING;
 		track_vol[t] = tracks[t].volume;
@@ -82,7 +77,7 @@ void Music_Play(const Song *s, uint8_t loop) {
 	song_tick = 0;
 	Music_ScheduleNextTick();
 	playing = 1;
-	Music_ProcessEvents();               /* notas del tick 0 */
+	Music_ProcessEvents();
 }
 
 void Music_Stop(void) {
@@ -108,11 +103,10 @@ void Music_AdvanceSamples(uint32_t n) {
 	samples_to_tick -= n;
 	if (samples_to_tick != 0) return;
 
-	/* ---- Un tick musical ---- */
 	song_tick++;
-	Synth_Tick();                                    /* notas que terminan pasan a release */
+	Synth_Tick();
 	for (uint8_t t = 0; t < num_tracks; t++)
 		if (tracks[t].state == TRACK_PLAYING && tracks[t].wait) tracks[t].wait--;
 	Music_ScheduleNextTick();
-	Music_ProcessEvents();                           /* notas que empiezan (puede reiniciar si hay loop) */
+	Music_ProcessEvents();
 }

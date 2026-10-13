@@ -9,13 +9,11 @@
 #define INC_LCD_REGISTERS_H_
 
 
-// [GH vertical] Pantalla en formato vertical: x = lado angosto (240), y = lado largo (320)
+// Pantalla vertical: 240 x 320
 #define ILI9341_TFTWIDTH  240
 #define ILI9341_TFTHEIGHT 320
 
-// [GH vertical] Valor de MADCTL (registro 0x36) para orientación vertical.
-// 0x48 = MX | BGR (vertical). Si la imagen sale de cabeza, usar 0x88 (MY | BGR).
-// Valor original horizontal: 0xE8 (0x40 | 0x80 | 0x20 | 0x08).
+// MADCTL (0x36) vertical: MX | BGR. Si la imagen sale de cabeza, usar 0x88 (MY | BGR)
 #define LCD_MADCTL_VERTICAL 0x48
 
 #define ILI9341_NOP     0x00

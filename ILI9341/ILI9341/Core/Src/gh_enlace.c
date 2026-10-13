@@ -1,7 +1,6 @@
 /*
  * gh_enlace.c
- * SPI2 esclavo por registros. La interrupción guarda cada paquete válido en una cola;
- * el while(1) los saca con GH_Enlace_Leer(). Ver gh_enlace.h.
+ * SPI2 esclavo por registros. La interrupción guarda cada paquete válido en una cola.
  */
 #include "gh_enlace.h"
 #include "main.h"
@@ -21,15 +20,15 @@ void GH_Enlace_Iniciar(void) {
 	RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
 	(void)RCC->APB1ENR;
 
-	/* PB12 NSS, PB13 SCK, PB15 MOSI: función alterna 5 (SPI2) */
+	/* PB12 NSS, PB13 SCK, PB15 MOSI: AF5 */
 	GPIOB->MODER = (GPIOB->MODER & ~((3u << (12 * 2)) | (3u << (13 * 2)) | (3u << (15 * 2))))
 	             | (2u << (12 * 2)) | (2u << (13 * 2)) | (2u << (15 * 2));
 	GPIOB->AFR[1] = (GPIOB->AFR[1] & ~((0xFu << ((12 - 8) * 4)) | (0xFu << ((13 - 8) * 4)) | (0xFu << ((15 - 8) * 4))))
 	              | (5u << ((12 - 8) * 4)) | (5u << ((13 - 8) * 4)) | (5u << ((15 - 8) * 4));
-	/* NSS con pull-up: si MusicaGame está desconectado, queda "no seleccionado" y no entra basura */
+	/* NSS con pull-up para no recibir basura si MusicaGame no está conectado */
 	GPIOB->PUPDR = (GPIOB->PUPDR & ~(3u << (12 * 2))) | (1u << (12 * 2));
 
-	/* Esclavo, modo 0, 8 bits, MSB primero, NSS por hardware, solo recepción */
+	/* esclavo, modo 0, 8 bits, NSS por hardware, solo recepción */
 	SPI2->CR1 = 0;
 	SPI2->CR2 = 0;
 	SPI2->CR1 = SPI_CR1_RXONLY;
@@ -42,7 +41,7 @@ void GH_Enlace_Iniciar(void) {
 
 void SPI2_IRQHandler(void) {
 	uint32_t sr = SPI2->SR;
-	if (sr & SPI_SR_OVR) {                       /* se perdió un byte: tirar el paquete a medias */
+	if (sr & SPI_SR_OVR) {                       /* se perdió un byte */
 		(void)SPI2->DR; (void)SPI2->SR;
 		rx_i = 0;
 		enlace_malos++;
@@ -51,7 +50,7 @@ void SPI2_IRQHandler(void) {
 	if (!(sr & SPI_SR_RXNE)) return;
 
 	uint8_t b = (uint8_t)SPI2->DR;
-	if (rx_i == 0 && b != GH_PKT_SYNC) return;   /* buscando el inicio de un paquete */
+	if (rx_i == 0 && b != GH_PKT_SYNC) return;
 	rx[rx_i++] = b;
 	if (rx_i < GH_PKT_LEN) return;
 	rx_i = 0;
@@ -59,7 +58,7 @@ void SPI2_IRQHandler(void) {
 	if (rx[7] != GH_Checksum(rx)) { enlace_malos++; return; }
 
 	uint8_t sig = (uint8_t)((cola_w + 1) & (COLA_N - 1));
-	if (sig == cola_r) { enlace_perdidos++; return; }   /* cola llena */
+	if (sig == cola_r) { enlace_perdidos++; return; }
 	for (uint32_t i = 0; i < GH_PKT_LEN; i++) cola[cola_w].b[i] = rx[i];
 	cola[cola_w].t_ms = HAL_GetTick();
 	cola_w = sig;

@@ -1,6 +1,6 @@
 /*
  * canciones_sd.c
- * Lista y carga de canciones .ghs desde la microSD. Ver canciones_sd.h.
+ * Lista y carga de las canciones .ghs de la microSD.
  */
 #include "canciones_sd.h"
 #include "ff.h"
@@ -9,7 +9,7 @@
 #include <string.h>
 
 typedef struct {
-	char archivo[FF_MAX_LFN + 12];     /* ruta completa */
+	char archivo[FF_MAX_LFN + 12];
 	char titulo[32];
 } Ficha;
 
@@ -18,7 +18,7 @@ static uint8_t montada = 0;
 static Ficha   lista[CANCIONES_SD_MAX];
 static uint8_t total = 0;
 
-/* La canción cargada (todo en RAM) */
+/* Canción cargada */
 static Note      notas[CANCIONES_SD_MAX_NOTAS];
 static TrackDef  pistas[MUSIC_MAX_TRACKS];
 static Song      cancion;
@@ -35,7 +35,6 @@ static uint8_t Es_GHS(const char *n) {
 	return e[0] == '.' && (e[1] | 0x20) == 'g' && (e[2] | 0x20) == 'h' && (e[3] | 0x20) == 's';
 }
 
-/* Lee solo el título del archivo */
 static uint8_t Leer_Titulo(const char *ruta, char *t) {
 	FIL f; UINT n; uint8_t h[60];
 	if (f_open(&f, ruta, FA_READ) != FR_OK) return 0;
@@ -64,13 +63,13 @@ static void Buscar_En(const char *carpeta) {
 
 uint8_t CancionesSD_Iniciar(void) {
 	total = 0;
-	f_mount(0, "", 0);                       /* por si es un reintento: suelta la tarjeta anterior */
+	f_mount(0, "", 0);
 	FRESULT r = f_mount(&fs, "", 1);
 	montada = (r == FR_OK);
 	if (!montada) { Registro("SD: no se pudo leer la tarjeta (error %u). Revisa conexion y formato FAT32.", r); return 0; }
 	Buscar_En("/CANCIONES");
 	if (!total) Buscar_En("/");
-	/* ordenar por nombre de archivo (pocas: burbuja) */
+	/* ordenar por nombre de archivo */
 	for (uint8_t i = 0; i + 1 < total; i++)
 		for (uint8_t j = 0; j + 1 < total - i; j++)
 			if (strcmp(lista[j].archivo, lista[j + 1].archivo) > 0) { Ficha t = lista[j]; lista[j] = lista[j + 1]; lista[j + 1] = t; }
@@ -104,7 +103,7 @@ const SongEntry *CancionesSD_Cargar(uint8_t i) {
 		return 0;
 	}
 
-	/* notas: se leen de 5 en 5 bytes por bloques y se acomodan en Note (6 bytes) */
+	/* las notas vienen en 5 bytes y se guardan como Note */
 	uint8_t buf[500];
 	uint32_t k = 0;
 	for (uint8_t t = 0; t < np; t++) {

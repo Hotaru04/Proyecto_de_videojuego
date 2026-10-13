@@ -22,13 +22,11 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "ili9341.h"
-#include "Bitmaps.h"
-#include "gh_sprites.h"   // [GH] sprites de botones y notas (en RAM)
-#include "gh_notas.h"     // [GH] dibujo de botones y movimiento de notas
-#include "gh_pista.h"     // [GH] pista con scroll por hardware (notas que llegan por SPI)
-#include "gh_enlace.h"    // [GH] SPI2 esclavo: paquetes de MusicaGame
-#include "gh_menu.h"      // [GH] lista de canciones, resultados y menú final
-#include <string.h>
+#include "gh_sprites.h"
+#include "gh_notas.h"
+#include "gh_pista.h"
+#include "gh_enlace.h"
+#include "gh_menu.h"
 
 /* USER CODE END Includes */
 
@@ -39,18 +37,6 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-/* [GH] 1 = probar la pantalla SIN MusicaGame: inventa notas cada GH_PRUEBA_CADA_MS */
-#define GH_PRUEBA_SIN_SPI   0
-#define GH_PRUEBA_CADA_MS   350
-
-
-
-// Variables para prueba sin maestro
-
-//#define GH_MODO_PRUEBA_MENU    1
-//#define GH_MENU_TEST_DELAY     2000 // ms para cambiar de opción automáticamente
-
-
 
 /* USER CODE END PD */
 
@@ -65,11 +51,6 @@ SPI_HandleTypeDef hspi1;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
-
-/* [GH] Los botones ya no llegan aquí: la ESP32 se conecta a MusicaGame, que juzga y manda por SPI
-   qué dibujar. USART3 queda configurada por CubeMX pero sin usarse. */
-
-extern uint16_t fondo[];
 
 /* USER CODE END PV */
 
@@ -118,295 +99,25 @@ int main(void)
   MX_SPI1_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
-  // Iniciar la escucha del ESP32 por interrupción
-
-
 	LCD_Init();
-
 	LCD_Clear(0x00);
-	//FillRect(unsigned int x, unsigned int y, unsigned int w, unsigned int h, unsigned int c);
-	//FillRect(0, 0, 319, 239, 0x0DFE);
-	//FillRect(0, 0, 319, 239, 0x4c9d);
-
-//	FillRect(50, 60, 20, 20, 0xF800);
-//
-//	FillRect(70, 60, 20, 20, 0x07E0);
-//
-//	FillRect(90, 60, 20, 20, 0x001F);
-
-
-	//LCD_Bitmap(unsigned int x, unsigned int y, unsigned int width, unsigned int height, unsigned char bitmap[]);
-	//LCD_Bitmap(100, 100, 49, 36, dkong);
-	//LCD_Bitmap(100, 100, 24, 30, sonic);
-
-	// [GH] Demo anterior en horizontal (320x240), desactivada al pasar a vertical:
-	//LCD_Bitmap(0, 0, 320, 240, fondoPinguin);
-	//LCD_BitmapTransparent(100, 100, 49, 36, dkong, 0x4b7e);
-	//LCD_BitmapTransparent(50, 60,32,32,megaman,0x03ba);
-
-	// [GH] Pista con scroll por hardware: fondo negro + fila de botones fija abajo
 	GH_Pista_Iniciar();
-	GH_Enlace_Iniciar();      // SPI2 esclavo (PB12 NSS, PB13 SCK, PB15 MOSI)
-	//LCD_Bitmap(132, 100, 32, 32, megaman);
-
-
-
-//	FillRect(0, 0, 319, 206, 0x055b);
-//	LCD_Print("Hola Mundo", 20, 150, 2, 0x001F, 0x055b);
-//
-//
-//for (int x = 0; x < 319; x++) {
-//			LCD_Bitmap(x, 116, 15, 15, tile);
-//			LCD_Bitmap(x, 68, 15, 15, tile);
-//			LCD_Bitmap(x, 207, 15, 15, tile);
-//			LCD_Bitmap(x, 223, 15, 15, tile);
-//			x += 14;
-//		}
-
-	//LCD_BitmapTransparent(100, 116-36, 49, 36, dkong, 0x4b7e);
-	//LCD_Sprite(int x, int y, int width, int height, unsigned char bitmap[], int columns, int index, char flip, char offset);
-
-	//LCD_Sprite(100, 116-29, 42, 29, link, 4, 0, 0, 0);
-
-
-	//  LCD_Print("Hola Mundo", 20, 100, 1, 0x001F, 0xCAB9);
-
-
-///////////////////////////////////////////////////////////////////////////////////////////////
-//
-//#if GH_MODO_PRUEBA_MENU
-//  // Al arrancar, desactivamos la pista de notas para que se pueda ver el menú completo.
-//  GH_Pista_Desactivar();
-//#endif
-
-
- ////////////////////////////////////////////////////////////////////////////
-
-
+	GH_Enlace_Iniciar();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 	while (1) {
+		/* paquetes de MusicaGame: primero los de menús, el resto es de la pista */
+		GH_Paquete pk;
+		while (GH_Enlace_Leer(&pk))
+			if (!GH_Menu_Paquete(pk.b)) GH_Pista_Paquete(pk.b, pk.t_ms);
 
-
-//////////////////////////////////////////
-
-//
-//#if !GH_MODO_PRUEBA_MENU
-//    /* 1. Recepción de paquetes reales desde el STM32 Maestro (Modo Normal) */
-//    {
-//      GH_Paquete pk;
-//      while (GH_Enlace_Leer(&pk)) {
-//        if (!GH_Menu_Paquete(pk.b)) {
-//          GH_Pista_Paquete(pk.b, pk.t_ms);
-//        }
-//      }
-//    }
-//#else
-//    /* PUERTA TRASERA ACTIVA: Simulación autónoma del menú */
-//    {
-//      static uint32_t tMenuTest = 0;
-//      static uint8_t opcionMock = 0;
-//      static uint8_t textoInyectado = 0;
-//      static uint8_t etapaSimulacion = 0; // 0 = Pantalla Inicio, 1 = Lista Canciones
-//      static uint32_t delayActual = 0;
-//
-//      // Inyección de nombres de canciones para la simulación
-//      if (!textoInyectado) {
-//
-//          const char *cancionesPrueba[3] = {
-//              "ANIMALS",
-//              "MIGHTY MORPHIN POWER RANGERS",
-//              "THE NIGHT BEGINS TO SHINE"
-//          };
-//
-//          // Enviar los nombres en paquetes de 3 caracteres
-//          for (uint8_t fila = 0; fila < 3; fila++) {
-//
-//              const char *nombre = cancionesPrueba[fila];
-//              uint8_t longitud = (uint8_t)strlen(nombre);
-//
-//              for (uint8_t pos = 0; pos <= longitud; pos += 3) {
-//
-//                  uint8_t pkt[8] = {
-//                      0xA5, 0x09, fila, pos,
-//                      0, 0, 0, 0
-//                  };
-//
-//                  // Colocar hasta 3 caracteres por paquete
-//                  for (uint8_t k = 0; k < 3; k++) {
-//                      if (pos + k < longitud) {
-//                          pkt[4 + k] = nombre[pos + k];
-//                      }
-//                  }
-//
-//                  // Checksum del protocolo
-//                  pkt[7] = pkt[1] ^ pkt[2] ^ pkt[3] ^
-//                           pkt[4] ^ pkt[5] ^ pkt[6];
-//
-//                  GH_Menu_Paquete(pkt);
-//              }
-//          }
-//
-//          textoInyectado = 1;
-//      }
-//
-//      // Máquina de estados de la simulación
-//      if (HAL_GetTick() - tMenuTest >= delayActual) {
-//        tMenuTest = HAL_GetTick();
-//
-//        if (etapaSimulacion == 0) {
-//            // Mostrar la Pantalla de Inicio (Título)
-//            uint8_t paquete_inicio[8] = { 0xA5, 0x08, 4, 0, 0, 0, 0, 0 }; // 4 = GH_PANT_INICIO
-//            GH_Menu_Paquete(paquete_inicio);
-//
-//            etapaSimulacion = 1; // La próxima vez pasamos a canciones
-//            delayActual = 3000;  // Esperamos 3 segundos viendo el título
-//        }
-//        else if (etapaSimulacion == 1) {
-//            // Mostrar el Menú de Canciones
-//            uint8_t paquete_menu[8] = { 0xA5, 0x08, 1, opcionMock, 3, 0, 0, 0 }; // 1 = GH_PANT_CANCIONES
-//            GH_Menu_Paquete(paquete_menu);
-//
-//            opcionMock = (opcionMock + 1) % 3; // Alternar opciones
-//            delayActual = 1500; // Cambiar cada 1.5 segundos
-//        }
-//      }
-//    }
-//#endif
-//
-//#if GH_PRUEBA_SIN_SPI && !GH_MODO_PRUEBA_MENU
-//    /* Prueba de notas cayendo sin SPI */
-//    {
-//      static uint32_t tPrueba = 0;
-//      static uint8_t  iPrueba = 0;
-//      if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
-//        tPrueba = HAL_GetTick();
-//        GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, iPrueba & 0x3F, tPrueba + GH_ANTICIPACION_MS,
-//                             (iPrueba % 4 == 3) ? 600 : 0);
-//        iPrueba++;
-//      }
-//    }
-//#endif
-
-////////////////////////////////////////////
-
-
-
-//		/* 1. Paquetes de MusicaGame (notas, aciertos / fallos, botones, menús) */
-//		{
-//			GH_Paquete pk;
-//			while (GH_Enlace_Leer(&pk))
-	//			if (!GH_Menu_Paquete(pk.b)) GH_Pista_Paquete(pk.b, pk.t_ms);   /* menús primero; lo demás es de la pista */
-	//	}
-
-//#if GH_PRUEBA_SIN_SPI
-		/* Prueba: notas inventadas, una por carril en orden, cada 4 una larga */
-	//	{
-		//	static uint32_t tPrueba = 0;
-			//static uint8_t  iPrueba = 0;
-			//if (HAL_GetTick() - tPrueba >= GH_PRUEBA_CADA_MS) {
-				//tPrueba = HAL_GetTick();
-				//GH_Pista_AgregarNota(iPrueba % GH_NUM_CARRILES, iPrueba & 0x3F, tPrueba + GH_ANTICIPACION_MS,
-				          //           (iPrueba % 4 == 3) ? 600 : 0);
-				//iPrueba++;
-			//}
-		//}
-//#endif
-
-		/* 2. Mover la pista y dibujar los botones */
-		/* ====================================================
-		 * RECEPCION DE PAQUETES DEL STM32 MAESTRO
-		 * ==================================================== */
-
-		{
-		    GH_Paquete pk;
-
-		    while (GH_Enlace_Leer(&pk)) {
-
-		        /* Primero procesar los paquetes del menu */
-		        if (!GH_Menu_Paquete(pk.b)) {
-
-		            /* Si no es un paquete del menu,
-		               pertenece a la pista de juego */
-		            GH_Pista_Paquete(pk.b, pk.t_ms);
-		        }
-		    }
-		}
-
-		/* Actualizar texto desplazable del menu */
 		GH_Menu_Actualizar();
-
-		/* Actualizar pista y notas cuando corresponda */
 		GH_Pista_Actualizar();
-
-
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
-//
-//				for (int x = 0; x < 319-42; x++) {
-//					int anim = (x/10)%4;
-//					// anim 0 1 2 3
-//					LCD_Sprite(x, 116-29, 42, 29, link, 4, anim, 0, 0);
-//					//V_line( x -1, 100, 50, 0x0DFE);
-//					HAL_Delay(15);
-//
-//				}
-//				for (int var = 319-24; var > 0;  var--) {
-//					int anim = (var / 10) % 4;
-//					LCD_Sprite(var, 100, 24, 30, sonics, 4, anim, 1, 0);
-//					V_line(var + 24, 100, 30, 0x0DFE);
-//					HAL_Delay(15);
-//				}
-//
-//		for (int x = 0; x < 319-24; x++) {
-//			int anim = (x/10)%4;
-//			// anim 0 1 2 3
-//			LCD_Sprite(x, 100, 24, 30, sonics, 4, anim, 0, 0);
-//			V_line( x -1, 100, 30, 0x0DFE);
-//			HAL_Delay(15);
-//
-//		}
-//		for (int var = 319-24; var > 0;  var--) {
-//			int anim = (var / 10) % 4;
-//			LCD_Sprite(var, 100, 24, 30, sonics, 4, anim, 1, 0);
-//			V_line(var + 24, 100, 30, 0x0DFE);
-//			HAL_Delay(15);
-//		}
-
-//		for (int var = 0; var < 319-26;  var++) {
-//			 int anim = (var / 5) % 4;
-//			LCD_Sprite(var,100,26,16,link,4,anim,0,0);
-//			V_line( var -1, 100, 16, 0x4d9e);
-//			 HAL_Delay(15);
-//		}
-//		for (int var = 319-26; var > 0;  var--) {
-//					 int anim = (var / 5) % 4;
-//					LCD_Sprite(var,100,26,16,link,4,anim,1,0);
-//					V_line( var +27, 100, 16, 0x4d9e);
-//					 HAL_Delay(15);
-//				}
-//
-//		for (int x = 0; x < 320 - 16; x++) {
-//		    int anim2 = (x / 10) % 4;
-//		    LCD_Sprite(x,100,16,16,kirbys,4,anim2,0,0);
-//		    V_line( x -1, 100, 16, 0x74DA);
-//		    HAL_Delay(15);
-//		  }
-//		  for (int x = 320-16; x > 0; x--) {
-//		    int anim2 = (x / 10) % 4;
-//		    LCD_Sprite(x,100,16,16,kirbys,4,anim2,1,0);
-//		    V_line( x +16, 100, 16, 0x74DA);
-//		    HAL_Delay(15);
-//		  }
-
-
-
-
 	}
   /* USER CODE END 3 */
 }

@@ -1,18 +1,8 @@
 /*
  * sd_spi.c
- * Lectura de la microSD (módulo HW-203) por SPI3, para FatFs (solo lectura).
- *
- *   HW-203   ->  Nucleo MusicaGame
- *   5V           5V          (el módulo trae su regulador a 3.3 V)
- *   GND          GND
- *   SCK          PC10        (SPI3_SCK)
- *   MISO         PC11        (SPI3_MISO)
- *   MOSI         PC12        (SPI3_MOSI)
- *   CS           PD2         (salida normal)
- *
- * Por registros: NO actives SPI3 en CubeMX.
- * Arranque a ~312 kHz (lo pide la tarjeta), después 10 MHz.
- * Funciona con tarjetas SDSC (hasta 2 GB) y SDHC (4–32 GB), formateadas en FAT32 (o FAT16).
+ * microSD (módulo HW-203) por SPI3 para FatFs, solo lectura.
+ * SCK PC10, MISO PC11, MOSI PC12, CS PD2. Por registros (no activar SPI3 en CubeMX).
+ * Inicializa a ~312 kHz y luego lee a 10 MHz. Tarjetas SDSC y SDHC en FAT32.
  */
 #include "ff.h"
 #include "diskio.h"
@@ -27,7 +17,7 @@
 static volatile DSTATUS estado = STA_NOINIT;
 static uint8_t es_sdhc = 0;                  /* 1 = se direcciona por bloque, 0 = por byte */
 
-volatile uint32_t sd_lecturas = 0, sd_errores = 0;   /* diagnóstico */
+volatile uint32_t sd_lecturas = 0, sd_errores = 0;
 
 static uint8_t Byte(uint8_t b) {
 	while (!(SPI3->SR & SPI_SR_TXE)) { }
@@ -46,7 +36,7 @@ static void Pines(void) {
 	RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN | RCC_AHB1ENR_GPIODEN;
 	RCC->APB1ENR |= RCC_APB1ENR_SPI3EN;
 	(void)RCC->APB1ENR;
-	/* PC10 SCK, PC11 MISO, PC12 MOSI: función alterna 6 (SPI3) */
+	/* PC10 SCK, PC11 MISO, PC12 MOSI: AF6 */
 	GPIOC->MODER = (GPIOC->MODER & ~((3u << 20) | (3u << 22) | (3u << 24))) | (2u << 20) | (2u << 22) | (2u << 24);
 	GPIOC->AFR[1] = (GPIOC->AFR[1] & ~((0xFu << 8) | (0xFu << 12) | (0xFu << 16))) | (6u << 8) | (6u << 12) | (6u << 16);
 	GPIOC->OSPEEDR |= (2u << 20) | (2u << 24);
@@ -104,7 +94,7 @@ static uint8_t Leer_Bloque(uint8_t *buf, uint32_t n) {
 	return 1;
 }
 
-/* ---------------- Interfaz de FatFs ---------------- */
+/* Interfaz de FatFs */
 DSTATUS disk_status(BYTE pdrv) { return pdrv ? STA_NOINIT : estado; }
 
 DSTATUS disk_initialize(BYTE pdrv) {
