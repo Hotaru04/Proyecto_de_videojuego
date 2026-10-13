@@ -193,6 +193,15 @@ static void Resultados(void) {
 	Ir_A(E_RESULTADOS);
 }
 
+/* SALIR AL MENU desde la pausa: la partida termina aquí y se muestra quién iba ganando */
+static uint8_t Atender_Pausa(void) {
+	if (Juez_Pedido() != JUEZ_PEDIDO_SALIR) return 0;
+	Audio_Detener();
+	Registro("Partida terminada desde la pausa");
+	Resultados();
+	return 1;
+}
+
 static void Menu_Fin(void) {
 	cursor = 0;
 	Pantalla(GH_PANT_FIN, cursor, 2, 0);
@@ -299,12 +308,15 @@ void Juego_Actualizar(void) {
 		case E_JUGANDO:
 			Beats_Actualizar();                 /* notas hacia las pantallas */
 			Juez_Actualizar();                  /* botones, puntos, mute, pausa */
+			if (Atender_Pausa()) break;
 			if (!Music_IsPlaying() && !Juez_EnPausa()) Ir_A(E_TERMINANDO);
 			break;
 
 		case E_TERMINANDO:                      /* deja que el juez califique las últimas notas */
 			Juez_Actualizar();
-			if (HAL_GetTick() - t_estado >= JUEGO_ESPERA_FIN_MS) Resultados();
+			if (Atender_Pausa()) break;
+			if (Juez_EnPausa()) t_estado = HAL_GetTick();   /* en pausa no corre la espera */
+			else if (HAL_GetTick() - t_estado >= JUEGO_ESPERA_FIN_MS) Resultados();
 			break;
 
 		case E_RESULTADOS:
@@ -314,8 +326,8 @@ void Juego_Actualizar(void) {
 		case E_MENU_FIN:
 			if (reenviar) Pantalla(GH_PANT_FIN, cursor, 2, 0);
 			if (Navegar(2, GH_PANT_FIN)) {
-				if (cursor == 0) Menu_Canciones();   /* SELECCIONAR CANCION */
-				else             Jugar(cancion);     /* REVANCHA */
+				if (cursor == 0) Jugar(cancion);     /* REVANCHA: la misma canción otra vez */
+				else             Menu_Inicio();      /* SALIR: al menú principal */
 			}
 			break;
 	}

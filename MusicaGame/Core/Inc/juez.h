@@ -13,7 +13,16 @@
  *   más lejos o nunca       -> FALLO,      0 puntos y se mutea la pista del jugador
  * Cualquier acierto (aunque sea JUSTO) hace que la pista vuelva a sonar.
  *
- * Pausa: Start de cualquier jugador. Solo el que la puso la puede quitar.
+ * Notas largas: además de la calificación del golpe, mientras se sostiene suma JUEZ_PUNTOS_SOSTENIDA
+ * cada JUEZ_SOSTENIDA_CADA_MS (si la suelta antes, se queda con lo que ya sumó).
+ *
+ * Puntos iguales para los dos: cada jugador tiene distinta cantidad de notas, así que lo que gana se escala
+ * para que el máximo posible (todas PERFECTO y todas las notas largas sostenidas completas) sea
+ * JUEZ_PUNTOS_MAXIMOS para los dos. Por eso una nota de quien tiene menos notas vale más.
+ *
+ * Pausa: Start de cualquier jugador. Solo el que la puso maneja el menú de pausa:
+ *   flechas mueven, A (verde) elige:  CONTINUAR / SALIR AL MENU   (Start también continúa)
+ * SALIR lo hace juego.c (ver Juez_Pedido): termina la partida y muestra quién ganó.
  */
 #ifndef INC_JUEZ_H_
 #define INC_JUEZ_H_
@@ -31,12 +40,23 @@
 #define JUEZ_PUNTOS_MEDIO     50
 #define JUEZ_PUNTOS_JUSTO     10
 
+#define JUEZ_PUNTOS_SOSTENIDA   5     /* puntos ... */
+#define JUEZ_SOSTENIDA_CADA_MS 100    /* ... por cada tanto de nota larga sostenida (50 puntos por segundo) */
+
+#define JUEZ_PUNTOS_MAXIMOS 100000u   /* puntaje perfecto, igual para los dos jugadores */
+
 #define JUEZ_NOTAS_POR_CARRIL 16
 
+/* Lo que pidió el jugador en el menú de pausa */
+#define JUEZ_PEDIDO_NADA       0
+#define JUEZ_PEDIDO_SALIR      1
+
 void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion);   /* e = 0: nada. Al repetir (0) se conservan los puntos */
+void Juez_Maximo(uint8_t jugador, uint32_t puntos_base);   /* lo máximo que puede ganar (lo calcula beats.c) */
 void Juez_NotaNueva(uint8_t jugador, uint8_t carril, uint16_t faltan_ms, uint16_t largo_ms);
 void Juez_Actualizar(void);
 uint8_t Juez_EnPausa(void);
+uint8_t Juez_Pedido(void);            /* JUEZ_PEDIDO_*; se borra al leerlo */
 
 /* Diagnóstico (Live Expressions): [0] jugador 1, [1] jugador 2 */
 extern volatile uint32_t juez_aciertos[2], juez_fallos[2], juez_puntos[2];

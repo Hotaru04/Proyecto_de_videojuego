@@ -184,12 +184,27 @@ static void Jugador_Preparar(Jugador *J, const Song *s, const uint8_t *pistas, u
 	J->hay_gema = Siguiente_Gema(J, &J->gema);
 }
 
+/* Lo máximo que puede ganar el jugador (puntos base, sin escalar): recorre una copia de sus notas tal
+ * como se van a mandar y suma PERFECTO por cada una más lo de sostener completas las notas largas. */
+static uint32_t Maximo(const Jugador *J) {
+	Jugador c = *J;                                       /* copia: no mueve los cursores reales */
+	uint32_t total = 0;
+	while (c.hay_gema) {
+		uint32_t largo = Ticks_A_Ms(c.gema.largo);
+		if (largo > 0xFFFF) largo = 0xFFFF;               /* igual que en Mandar() */
+		total += JUEZ_PUNTOS_PERFECTO + (largo / JUEZ_SOSTENIDA_CADA_MS) * JUEZ_PUNTOS_SOSTENIDA;
+		c.hay_gema = Siguiente_Gema(&c, &c.gema);
+	}
+	return total;
+}
+
 static void Reiniciar(uint8_t nueva) {
 	const Song *s = entrada->song;
 	Jugador_Preparar(&jug[0], s, entrada->p1_tracks, entrada->p1_n);
 	Jugador_Preparar(&jug[1], s, entrada->p2_tracks, entrada->p2_n);
 	tick_previo = 0;
 	Juez_Iniciar(entrada, nueva);                         /* borra las notas que el juez llevaba */
+	if (nueva) { Juez_Maximo(0, Maximo(&jug[0])); Juez_Maximo(1, Maximo(&jug[1])); }
 	Enlace_Enviar(ENLACE_AMBOS, GH_PKT_CANCION, cancion, (uint8_t)bpm, (uint8_t)(bpm >> 8), 0, 0);
 }
 

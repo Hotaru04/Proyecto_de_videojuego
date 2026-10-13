@@ -26,6 +26,7 @@ enum { N_ESPERA = 0, N_SOSTENIDA, N_TERMINADA };
 typedef struct {
 	uint32_t t;          /* ms en que la nota llega al botón */
 	uint32_t t_fin;      /* ms en que termina la cola (= t si es nota normal) */
+	uint32_t t_pago;     /* nota larga: hasta qué hora ya se pagaron los puntos por sostenerla */
 	uint8_t  id;
 	uint8_t  estado;
 } JNota;
@@ -48,6 +49,9 @@ static const SongEntry *entrada = 0;
 
 static int8_t   pausa_de = -1;        /* jugador que puso la pausa (0 o 1), -1 = sin pausa */
 static uint32_t pausa_t0;             /* cuándo empezó */
+static uint8_t  pausa_opc = 0;        /* opción marcada en el menú de pausa (GH_PAUSA_*) */
+static uint8_t  pedido = JUEZ_PEDIDO_NADA;
+static uint32_t crudo[2], maximo[2];  /* puntos sin escalar y lo máximo que puede sacar cada jugador */
 
 volatile uint32_t juez_aciertos[2] = { 0, 0 }, juez_fallos[2] = { 0, 0 }, juez_puntos[2] = { 0, 0 };
 volatile uint8_t  juez_muteado[2] = { 0, 0 };
@@ -58,11 +62,23 @@ static void Evento(uint8_t j, uint8_t c, const JNota *n, uint8_t evt, uint8_t ca
 	Enlace_Enviar(ENLACE_JUGADOR(j), GH_PKT_EVENTO, GH_ID_CARRIL(n->id, c), evt, cal, 0, 0);
 }
 
-/* Suma los puntos de la calificación y le manda el total a la pantalla del jugador */
-static void Calificar(uint8_t j, uint8_t cal) {
-	juez_puntos[j] += PUNTOS[cal];
+/* Suma puntos y le manda el total a la pantalla del jugador (cal = lo que muestra junto a los puntos).
+ * El total se escala: crudo / máximo del jugador * JUEZ_PUNTOS_MAXIMOS (ver juez.h). */
+static void Sumar(uint8_t j, uint32_t puntos, uint8_t cal) {
+	crudo[j] += puntos;
+	juez_puntos[j] = maximo[j] ? (uint32_t)(((uint64_t)crudo[j] * JUEZ_PUNTOS_MAXIMOS) / maximo[j]) : crudo[j];
 	uint32_t p = juez_puntos[j];
 	Enlace_Enviar(ENLACE_JUGADOR(j), GH_PKT_PUNTOS, (uint8_t)p, (uint8_t)(p >> 8), (uint8_t)(p >> 16), (uint8_t)(p >> 24), cal);
+}
+
+static void Calificar(uint8_t j, uint8_t cal) { Sumar(j, PUNTOS[cal], cal); }
+
+/* Nota larga: paga lo sostenido hasta la hora 'hasta' (nunca más allá del final de la cola) */
+static void Pagar_Sostenida(uint8_t j, JNota *n, uint32_t hasta) {
+	if ((int32_t)(hasta - n->t_fin) > 0) hasta = n->t_fin;
+	uint32_t pts = 0;
+	while ((int32_t)(hasta - n->t_pago) >= JUEZ_SOSTENIDA_CADA_MS) { n->t_pago += JUEZ_SOSTENIDA_CADA_MS; pts += JUEZ_PUNTOS_SOSTENIDA; }
+	if (pts) Sumar(j, pts, GH_CAL_SOSTENIDA);
 }
 
 /* Mutea / devuelve el volumen original de las pistas del jugador */
@@ -82,6 +98,7 @@ static void Mutear(uint8_t j, uint8_t si) {
 void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion) {
 	entrada = e;
 	if (pausa_de >= 0) { pausa_de = -1; Audio_Pausa(0); }
+	pedido = JUEZ_PEDIDO_NADA;
 	for (uint8_t j = 0; j < 2; j++) {
 		JJugador *J = &jug[j];
 		for (uint8_t c = 0; c < CONTROLES_CARRILES; c++) { J->car[c].ini = 0; J->car[c].cant = 0; }
@@ -92,7 +109,7 @@ void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion) {
 		J->npistas = e ? (j == 0 ? e->p1_n      : e->p2_n)      : 0;
 		Mutear(j, 0);
 		if (nueva_cancion) {                    /* al repetir la misma canción los puntos se conservan */
-			juez_puntos[j] = 0; juez_aciertos[j] = 0; juez_fallos[j] = 0;
+			juez_puntos[j] = 0; juez_aciertos[j] = 0; juez_fallos[j] = 0; crudo[j] = 0; maximo[j] = 0;
 		}
 		if (e) Enlace_Enviar(ENLACE_JUGADOR(j), GH_PKT_PUNTOS, (uint8_t)juez_puntos[j], (uint8_t)(juez_puntos[j] >> 8),
 		                     (uint8_t)(juez_puntos[j] >> 16), (uint8_t)(juez_puntos[j] >> 24), 0xFF);
@@ -100,6 +117,15 @@ void Juez_Iniciar(const SongEntry *e, uint8_t nueva_cancion) {
 }
 
 uint8_t Juez_EnPausa(void) { return pausa_de >= 0; }
+
+void Juez_Maximo(uint8_t j, uint32_t puntos_base) {
+	if (j > 1) return;
+	maximo[j] = puntos_base;
+	Registro("J%u: maximo %lu puntos base -> se escala a %lu", j + 1, (unsigned long)puntos_base,
+	         (unsigned long)JUEZ_PUNTOS_MAXIMOS);
+}
+
+uint8_t Juez_Pedido(void) { uint8_t p = pedido; pedido = JUEZ_PEDIDO_NADA; return p; }
 
 void Juez_NotaNueva(uint8_t j, uint8_t c, uint16_t faltan_ms, uint16_t largo_ms) {
 	if (j > 1 || c >= CONTROLES_CARRILES) return;
@@ -111,6 +137,7 @@ void Juez_NotaNueva(uint8_t j, uint8_t c, uint16_t faltan_ms, uint16_t largo_ms)
 	n->id     = (uint8_t)(J->id_sig++ & 0x3F);
 	n->t      = HAL_GetTick() + faltan_ms;
 	n->t_fin  = n->t + largo_ms;
+	n->t_pago = n->t;
 	n->estado = N_ESPERA;
 #if JUEZ_REGISTRAR_NOTAS
 	if (largo_ms) Registro("J%u nota %-8s id %2u  llega en %u ms  larga %u ms", j + 1, COLOR[c], n->id, faltan_ms, largo_ms);
@@ -142,7 +169,7 @@ static void Presionar(uint8_t j, uint8_t c, uint32_t t) {
 
 	int32_t a = mejor_err < 0 ? -mejor_err : mejor_err;
 	uint8_t cal = (a <= JUEZ_PERFECTO_MS) ? GH_CAL_PERFECTO : (a <= JUEZ_MEDIO_MS) ? GH_CAL_MEDIO : GH_CAL_JUSTO;
-	if (mejor->t_fin != mejor->t) { mejor->estado = N_SOSTENIDA; Evento(j, c, mejor, GH_EVT_SOSTENIDA, cal); }
+	if (mejor->t_fin != mejor->t) { mejor->estado = N_SOSTENIDA; mejor->t_pago = mejor->t; Evento(j, c, mejor, GH_EVT_SOSTENIDA, cal); }
 	else                          { mejor->estado = N_TERMINADA; Evento(j, c, mejor, GH_EVT_ACIERTO,   cal); }
 	juez_aciertos[j]++;
 	Calificar(j, cal);
@@ -156,6 +183,7 @@ static void Soltar(uint8_t j, uint8_t c, uint32_t t) {
 	for (uint8_t i = 0; i < k->cant; i++) {
 		JNota *n = Lugar(k, i);
 		if (n->estado != N_SOSTENIDA) continue;
+		Pagar_Sostenida(j, n, t);                       /* se queda con lo que sostuvo */
 		n->estado = N_TERMINADA;
 		if ((int32_t)(n->t_fin - t) <= JUEZ_MEDIO_MS) {
 			Evento(j, c, n, GH_EVT_COMPLETA, 0);            /* soltó justo al final: cuenta como completa */
@@ -174,15 +202,16 @@ static void Start(uint8_t j, uint32_t t) {
 	if (pausa_de < 0) {
 		pausa_de = (int8_t)j;
 		pausa_t0 = t;
+		pausa_opc = GH_PAUSA_CONTINUAR;
 		Audio_Pausa(1);
-		Enlace_Enviar(ENLACE_AMBOS, GH_PKT_PAUSA, 1, (uint8_t)(j + 1), 0, 0, 0);
+		Enlace_Enviar(ENLACE_AMBOS, GH_PKT_PAUSA, 1, (uint8_t)(j + 1), pausa_opc, 0, 0);
 		Registro("PAUSA (la puso J%u; solo J%u la puede quitar)", j + 1, j + 1);
 	} else if (pausa_de == (int8_t)j) {
 		uint32_t dur = t - pausa_t0;
 		for (uint8_t jj = 0; jj < 2; jj++)                /* las notas pendientes se corren lo que duró la pausa */
 			for (uint8_t c = 0; c < CONTROLES_CARRILES; c++) {
 				JCarril *k = &jug[jj].car[c];
-				for (uint8_t i = 0; i < k->cant; i++) { Lugar(k, i)->t += dur; Lugar(k, i)->t_fin += dur; }
+				for (uint8_t i = 0; i < k->cant; i++) { Lugar(k, i)->t += dur; Lugar(k, i)->t_fin += dur; Lugar(k, i)->t_pago += dur; }
 			}
 		pausa_de = -1;
 		Audio_Pausa(0);
@@ -197,14 +226,26 @@ static void Start(uint8_t j, uint32_t t) {
 	}
 }
 
+/* Menú de pausa: solo el jugador que la puso. Flechas mueven, A (verde) elige. */
+static void Menu_Pausa(uint8_t j, uint8_t carril, uint32_t t) {
+	if (j != (uint8_t)pausa_de) return;
+	if (carril == CONTROL_ARRIBA || carril == CONTROL_ABAJO) {
+		pausa_opc = (uint8_t)((pausa_opc + (carril == CONTROL_ABAJO ? 1 : GH_PAUSA_OPCIONES - 1)) % GH_PAUSA_OPCIONES);
+		Enlace_Enviar(ENLACE_AMBOS, GH_PKT_PAUSA, 1, (uint8_t)(j + 1), pausa_opc, 0, 0);
+	} else if (carril == 0) {
+		if (pausa_opc == GH_PAUSA_CONTINUAR) Start(j, t);
+		else                                 { pedido = JUEZ_PEDIDO_SALIR; Registro("J%u: SALIR AL MENU", j + 1); }
+	}
+}
+
 void Juez_Actualizar(void) {
 	/* 1. Botones (primero, con la hora en que llegaron) */
 	Control_Evento ev;
 	while (Controles_Siguiente(&ev)) {
 		if (ev.jugador > 1) continue;
 		if (ev.carril == CONTROL_START) { if (ev.presionado) Start(ev.jugador, ev.t_ms); continue; }
+		if (pausa_de >= 0) { if (ev.presionado) Menu_Pausa(ev.jugador, ev.carril, ev.t_ms); continue; }
 		if (ev.carril >= CONTROLES_CARRILES) continue;  /* flechas: solo para los menús */
-		if (pausa_de >= 0) continue;                    /* en pausa los botones no califican */
 		if (ev.presionado) Presionar(ev.jugador, ev.carril, ev.t_ms);
 		else               Soltar(ev.jugador, ev.carril, ev.t_ms);
 	}
@@ -228,6 +269,7 @@ void Juez_Actualizar(void) {
 					Registro("J%u %s FALLO (id %u)", j + 1, COLOR[c], n->id);
 					Mutear(j, 1);
 				} else if (n->estado == N_SOSTENIDA) {
+					Pagar_Sostenida(j, n, ahora);
 					if ((int32_t)(ahora - n->t_fin) >= 0) {
 						n->estado = N_TERMINADA;            /* aguantó toda la cola */
 						Evento(j, c, n, GH_EVT_COMPLETA, 0);
